@@ -10,6 +10,9 @@ on:
     paths: [package.json]
   workflow_dispatch:
 
+# deux publications de la même version ne se lancent jamais en même temps
+concurrency: release
+
 permissions:
   contents: write
 
@@ -17,12 +20,19 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - run: npm ci
-      - name: Fabriquer et publier l'installateur
+      # La Release est d'abord créée en brouillon (envoi des fichiers sans conflit),
+      # puis rendue publique : c'est à ce moment que les applications installées la voient.
+      - name: Fabriquer l'installateur et l'envoyer (brouillon)
         run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Rendre la version publique
+        shell: bash
+        run: gh release edit "v$(node -p "require('./package.json').version")" --draft=false --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
