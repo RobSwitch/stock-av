@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
+<title>Stock AV — Paramètres</title>
+<style>
+  :root { --bg:#f5f6f8; --ink:#1c2230; --muted:#6b7385; --line:#e2e5ec; --accent:#2f5bea; --ok:#1a7f4b; --err:#c0392b; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--ink); color:#fff; padding:14px 24px; display:flex; align-items:center; gap:12px; }
+  header img { width:30px; height:30px; }
+  header h1 { margin:0; font-size:18px; }
+  main { max-width:720px; margin:28px auto; padding:0 16px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:14px; }
+  .choice { display:flex; gap:12px; align-items:flex-start; cursor:pointer; border:2px solid var(--line); border-radius:12px; padding:14px 16px; margin-bottom:10px; background:#fff; }
+  .choice:has(input:checked) { border-color:var(--accent); background:#f3f6ff; }
+  .choice input { margin-top:4px; }
+  .choice b { display:block; font-size:16px; }
+  .muted { color:var(--muted); font-size:13px; }
+  label.f { display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted); margin-top:12px; }
+  input[type=text] { font:inherit; padding:9px 11px; border:1px solid var(--line); border-radius:8px; }
+  .row { display:flex; gap:8px; align-items:center; }
+  .row input[type=text] { flex:1; }
+  button { font:inherit; padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; }
+  button.main { background:var(--accent); color:#fff; border-color:var(--accent); padding:10px 22px; }
+  .err { background:#fdecea; color:#a1262b; border-radius:10px; padding:10px 14px; margin-bottom:14px; }
+  .ok { color:var(--ok); font-size:13px; } .ko { color:var(--err); font-size:13px; }
+  .hidden { display:none; }
+  .chk { display:flex; gap:8px; align-items:center; margin-top:12px; font-size:14px; }
+</style>
+</head>
+<body>
+<header><img src="icon.png" alt=""><h1>Stock AV — paramètres</h1><span class="muted" id="ver" style="color:#aeb6c8;margin-left:auto"></span></header>
+<main>
+  <div class="err hidden" id="error"></div>
+  <p style="margin-top:0">Comment ce PC doit-il utiliser Stock AV ? <span class="muted">(modifiable plus tard : menu <b>Stock AV → Paramètres de connexion</b>, touche Alt)</span></p>
+
+  <label class="choice"><input type="radio" name="mode" value="server">
+    <span><b>Ce PC est le serveur</b>
+      <span class="muted">Il garde la base de données (stock, planning, fiches techniques) et doit rester allumé pour que les autres PC puissent travailler. Un seul PC doit avoir ce rôle.</span></span></label>
+  <div class="card hidden" id="serverBox">
+    <label class="f">Dossier des données
+      <span class="row"><input type="text" id="dataDir"><button type="button" id="browse">Parcourir…</button></span></label>
+    <div class="muted" id="dataHint" style="margin-top:6px"></div>
+    <label class="chk"><input type="checkbox" id="autostart" checked> Démarrer Stock AV avec Windows (le serveur tourne en arrière-plan, près de l'horloge)</label>
+  </div>
+
+  <label class="choice"><input type="radio" name="mode" value="client">
+    <span><b>Se connecter au serveur</b>
+      <span class="muted">Ce PC utilise la base d'un autre PC (le serveur). Les données restent sur le serveur.</span></span></label>
+  <div class="card hidden" id="clientBox">
+    <label class="f">Adresse du serveur <span>(affichée sur le PC serveur : clic droit sur l'icône Stock AV près de l'horloge)</span>
+      <span class="row"><input type="text" id="serverUrl" placeholder="http://10.20.0.41:3000"><button type="button" id="test">Tester</button></span></label>
+    <div id="testResult" style="margin-top:6px"></div>
+  </div>
+
+  <div class="row" style="justify-content:flex-end;margin-top:18px">
+    <span class="ko" id="saveErr" style="margin-right:auto"></span>
+    <button type="button" class="main" id="save">Enregistrer et démarrer</button>
+  </div>
+</main>
+<script>
+const $ = (s) => document.querySelector(s);
+let state = {};
+const mode = () => document.querySelector('input[name=mode]:checked')?.value;
+function refresh() {
+  $('#serverBox').classList.toggle('hidden', mode() !== 'server');
+  $('#clientBox').classList.toggle('hidden', mode() !== 'client');
+}
+(async () => {
+  const err = new URLSearchParams(location.search).get('error');
+  if (err) { $('#error').textContent = err; $('#error').classList.remove('hidden'); }
+  state = await window.stockav.get();
+  const c = state.config || {};
+  $('#ver').textContent = 'version ' + state.version;
+  if (c.mode) document.querySelector(`input[value=${c.mode}]`).checked = true;
+  $('#dataDir').value = c.dataDir || state.suggestedDataDir;
+  $('#dataHint').textContent = c.dataDir ? '' : 'Proposé automatiquement' + (/stock-av$/i.test(state.suggestedDataDir) ? ' : c\'est le dossier de ta version actuelle, les données existantes seront reprises.' : '.');
+  $('#autostart').checked = c.autostart !== false;
+  $('#serverUrl').value = c.serverUrl || '';
+  refresh();
+})();
+document.querySelectorAll('input[name=mode]').forEach((r) => r.addEventListener('change', refresh));
+$('#browse').onclick = async () => { const d = await window.stockav.chooseFolder($('#dataDir').value); if (d) { $('#dataDir').value = d; $('#dataHint').textContent = ''; } };
+const normUrl = (u) => { u = u.trim(); if (u && !/^https?:\/\//i.test(u)) u = 'http://' + u; if (u && !/:\d+(\/|$)/.test(u.replace(/^https?:\/\//, ''))) u = u.replace(/\/*$/, '') + ':3000'; return u.replace(/\/+$/, ''); };
+$('#test').onclick = async () => {
+  const u = normUrl($('#serverUrl').value); $('#serverUrl').value = u;
+  $('#testResult').innerHTML = '<span class="muted">Test en cours…</span>';
+  const r = await window.stockav.test(u);
+  $('#testResult').innerHTML = r.ok ? `<span class="ok">✔ Serveur trouvé (version ${r.build.replace(/^v/, '')})</span>` : `<span class="ko">✖ Serveur injoignable (${r.error}). Vérifie l'adresse, que le PC serveur est allumé et que le pare-feu autorise le port 3000.</span>`;
+};
+$('#save').onclick = async () => {
+  $('#saveErr').textContent = '';
+  const m = mode();
+  if (!m) return ($('#saveErr').textContent = 'Choisis un des deux modes.');
+  if (m === 'server' && !$('#dataDir').value.trim()) return ($('#saveErr').textContent = 'Choisis le dossier des données.');
+  if (m === 'client' && !normUrl($('#serverUrl').value)) return ($('#saveErr').textContent = 'Indique l\'adresse du serveur.');
+  await window.stockav.save(m === 'server'
+    ? { mode: 'server', dataDir: $('#dataDir').value.trim(), autostart: $('#autostart').checked, port: 3000 }
+    : { mode: 'client', serverUrl: normUrl($('#serverUrl').value) });
+};
+</script>
+</body>
+</html>

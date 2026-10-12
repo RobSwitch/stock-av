@@ -1,0 +1,59 @@
+{
+  "name": "stock-av",
+  "productName": "Stock AV",
+  "version": "1.0.0",
+  "description": "Suivi du stock audiovisuel et planning BEO",
+  "author": "Robin Schouten",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": "github:RobSwitch/stock-av",
+  "main": "electron/main.js",
+  "scripts": {
+    "server": "node server.js",
+    "app": "electron .",
+    "dist": "electron-builder --win --publish never",
+    "release": "electron-builder --win --publish always"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "be.dolce.stockav",
+    "productName": "Stock AV",
+    "files": [
+      "electron/**",
+      "public/**",
+      "server.js",
+      "beopdf.js",
+      "offrepdf.js",
+      "pdftext.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Stock AV"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "RobSwitch",
+        "repo": "stock-av",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

@@ -1,0 +1,14 @@
+# ---- DONNÉES : ne jamais envoyer sur GitHub (clients, planning, stock, fiches techniques)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+fichiers/
+offres/
+*.pdf
+*.xlsx
+*.xls
+
+# ---- Fichiers générés
+node_modules/
+dist/

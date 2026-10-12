@@ -1,0 +1,2003 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stock Audiovisuel</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --ink:#1c2230; --muted:#6b7385; --line:#e2e5ec; --accent:#2f5bea; --ok:#1a7f4b; --err:#c0392b; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.4 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--ink); }
+  header { background:var(--ink); color:#fff; padding:12px 20px; display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
+  header h1 { margin:0; font-size:18px; }
+  nav button { background:none; border:0; color:#aeb6c8; font:inherit; padding:8px 12px; cursor:pointer; border-radius:6px; }
+  nav button.active { background:#2c3550; color:#fff; }
+  main { max-width:1100px; margin:20px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:12px; color:var(--muted); gap:4px; }
+  input, select, button.btn { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:#fff; }
+  button.btn { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
+  button.btn.ghost { background:#fff; color:var(--ink); border-color:var(--line); }
+  button.small { padding:4px 8px; font-size:13px; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+  .tag { display:inline-block; background:#eef1fb; color:var(--accent); border-radius:999px; padding:2px 9px; font-size:12px; margin:2px 4px 2px 0; }
+  .tag.salle { background:#e8f5ee; color:var(--ok); }
+  .muted { color:var(--muted); }
+  .toast { position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:10px 16px; border-radius:8px; display:none; }
+  .toast.err { background:var(--err); }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
+  h2 { margin:0 0 12px; font-size:16px; }
+  .hidden { display:none; }
+  details.floor { margin-bottom:18px; }
+  details.floor > summary { cursor:pointer; list-style:none; font-size:17px; font-weight:600; padding:8px 4px; display:flex; align-items:center; gap:10px; }
+  details.floor > summary::-webkit-details-marker { display:none; }
+  details.floor > summary::before { content:"▾"; color:var(--muted); }
+  details.floor:not([open]) > summary::before { content:"▸"; }
+  .count { font-size:12px; font-weight:400; color:var(--muted); background:#e9ecf3; border-radius:999px; padding:2px 9px; }
+  .grid.rooms { grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; align-items:start; }
+  .grid.rooms .card { margin:0; padding:12px; }
+  .grid.rooms h3 { margin:0 0 6px; font-size:15px; }
+  .grid.rooms td { padding:4px 0; font-size:14px; border:0; }
+  /* Code couleur : vert = contient du matériel, gris pointillé = vide */
+  .grid.rooms .card { border-left-width:5px; }
+  .grid.rooms .card.filled { background:#eaf7ef; border-color:#9fd6b4; border-left-color:#1a7f4b; }
+  .grid.rooms .card.vide { background:#f1f2f5; border:1px dashed #c4c9d4; border-left:5px solid #b3b9c6; }
+  .grid.rooms .card.vide h3 { color:#8a91a3; font-weight:500; }
+  .grid.rooms .card.found { background:#fff; border-left-color:#f0b429; }
+  .legend { display:flex; gap:18px; flex-wrap:wrap; font-size:13px; color:var(--muted); margin:0 0 14px; }
+  .legend i { display:inline-block; width:14px; height:14px; border-radius:3px; vertical-align:-2px; margin-right:6px; }
+  .legend .l-full { background:#eaf7ef; border:1px solid #9fd6b4; border-left:4px solid #1a7f4b; }
+  .legend .l-empty { background:#f1f2f5; border:1px dashed #c4c9d4; border-left:4px solid #b3b9c6; }
+  .roomact { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 8px; }
+  .grid.rooms .card.found { border-color:#f0b429; box-shadow:0 0 0 2px #fdecc0; }
+  .grid.rooms tr.hit td { background:#fff3c4; font-weight:600; }
+  .grid.rooms tr.hit td:first-child { border-radius:4px 0 0 4px; padding-left:6px; }
+  .grid.rooms tr.hit td:last-child { border-radius:0 4px 4px 0; padding-right:6px; }
+  .grid.rooms tr.dim td { color:#a3a9b8; }
+  #lieuxGrid .card[data-room] { cursor:pointer; }
+  #lieuxGrid .card[data-room]:hover { box-shadow:0 0 0 2px var(--accent); }
+  .roommenu { position:absolute; z-index:50; width:250px; background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 28px rgba(0,0,0,.18); padding:6px; }
+  .roommenu .rmh { font-weight:600; font-size:13px; padding:4px 8px 6px; border-bottom:1px solid var(--line); margin-bottom:4px; }
+  .roommenu button { display:block; width:100%; text-align:left; border:0; background:none; font:inherit; font-size:14px; padding:7px 8px; border-radius:6px; cursor:pointer; color:var(--ink); }
+  .roommenu button:hover { background:#eef1fb; }
+  .grid.rooms .lbl.stk { font-size:11px; margin:2px 0 0; color:var(--ok); }
+  .eqin { margin-top:6px; padding-top:6px; border-top:1px dashed #c4c9d4; font-size:12px; color:#59627a; }
+  .eqin .lbl { font-size:11px; margin-bottom:2px; color:#6b7385; }
+  .eqin .hit { background:#fff3c4; font-weight:600; border-radius:4px; color:var(--ink); }
+  .eqin .dim { color:#b8bdc9; }
+  .extin { margin-top:6px; padding-top:6px; border-top:1px dashed #9fb6e8; font-size:13px; }
+  .extin .lbl { font-size:11px; margin-bottom:2px; color:#2447a8; }
+  .extin > div + div { margin-top:2px; }
+  .extin .pill { font-size:10px; }
+  .extin .hit { background:#fff3c4; font-weight:600; border-radius:4px; }
+  .extin .dim { color:#a3a9b8; }
+  .step { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff; font-size:13px; margin-right:6px; }
+  .arrow { font-size:22px; color:var(--muted); padding-bottom:6px; }
+  .warn { color:var(--err); margin:8px 0 0; min-height:0; }
+  .warn:empty { display:none; }
+  .over td { color:var(--err); }
+  .over input { border-color:var(--err); }
+  #mvCartBody input { width:80px; }
+  button.btn:disabled { opacity:.45; cursor:not-allowed; }
+  details.hist { background:var(--card); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; }
+  details.hist > summary { cursor:pointer; list-style:none; padding:12px 14px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  details.hist > summary::-webkit-details-marker { display:none; }
+  details.hist > summary::before { content:"▸"; color:var(--muted); }
+  details.hist[open] > summary::before { content:"▾"; }
+  details.hist[open] > summary { border-bottom:1px solid var(--line); }
+  details.hist table { margin:6px 14px 10px; width:calc(100% - 28px); }
+  .hdate { color:var(--muted); font-size:13px; width:130px; flex:none; }
+  /* Trajet en 3 colonnes fixes : source | flèche | destination, alignées d'une ligne à l'autre */
+  .hroute { display:grid; grid-template-columns:minmax(0,175px) 22px minmax(0,175px); align-items:baseline; flex:none; max-width:100%; }
+  .hroute b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .hroute .arr { text-align:center; color:var(--muted); }
+  .hcount { color:var(--muted); font-size:13px; margin-left:auto; }
+  .hnote { flex-basis:100%; color:var(--muted); font-size:13px; padding-left:22px; }
+  .tag2 { font-size:12px; border-radius:999px; padding:2px 10px; }
+  .tag2.mount { background:#e3ebff; color:#2347c0; }
+  .tag2.unmount { background:#ffefd9; color:#a85a00; }
+  .tag2.swap { background:#f0e8fd; color:#6b3fc4; }
+  .tag2.stk { background:#eceef3; color:#59627a; }
+  .tag2.in { background:#e8f5ee; color:var(--ok); }
+  .tag2.out { background:#fdecea; color:var(--err); }
+  .plsrc { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .plsrc .info { flex:1; min-width:240px; }
+  .plsrc .fname { font-weight:600; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; flex-wrap:wrap; }
+  .seg button { border:0; background:#fff; padding:7px 14px; font:inherit; font-size:13px; cursor:pointer; color:var(--ink); border-right:1px solid var(--line); }
+  .seg button:last-child { border-right:0; }
+  .seg button:disabled { color:var(--ink); cursor:default; }
+  .seg button.active { background:var(--accent); color:#fff; }
+  .plbar { display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap; margin-bottom:8px; }
+  .plbar .plareas button { padding:9px 18px; font-size:14px; font-weight:600; }
+  .plbar .daychips { flex:1; }
+  .plweek { margin-left:auto; font-size:13px; color:var(--muted); white-space:nowrap; display:inline-flex; align-items:center; gap:6px; }
+  .plweek .wk { border:1px solid var(--line); background:#fff; border-radius:6px; padding:3px 8px; font-size:11px; cursor:pointer; color:var(--ink); }
+  .plweek .wk:hover { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .gridwrap { overflow:auto; max-height:75vh; border:1px solid var(--line); border-radius:10px; background:#fff; }
+  table.pg { border-collapse:separate; border-spacing:0; font-size:12px; width:100%; table-layout:fixed; }
+  table.pg th, table.pg td { border-right:1px solid var(--line); border-bottom:1px solid var(--line); padding:0; vertical-align:top; }
+  table.pg thead th { position:sticky; top:0; z-index:3; background:#eef1f6; padding:6px 8px; font-weight:600; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  table.pg th.day { position:sticky; left:0; z-index:2; background:#eef1f6; padding:6px 10px; width:86px; text-align:left; text-transform:capitalize; white-space:nowrap; }
+  table.pg thead th.day { z-index:4; }
+  table.pg tr.today th.day { box-shadow:inset 4px 0 0 #f0b429; }
+  table.pg td { height:54px; overflow:hidden; }
+  /* Planning : toute la largeur de l'écran ; les colonnes se partagent la place (défilement seulement sur petit écran) */
+  body.plwide main { max-width:none; }
+  .plsize button { padding:3px 9px; font-size:11px; }
+  /* Vue compacte : heure + société sur une ligne, description sur une ligne (le reste au survol) */
+  .gridwrap.compact table.pg td { height:30px; }
+  .gridwrap.compact table.pg thead th { padding:4px 4px; font-size:11px; }
+  .gridwrap.compact table.pg th.day { padding:3px 6px; width:70px; font-size:11px; }
+  .gridwrap.compact .pc { padding:2px 5px; font-size:11px; line-height:1.25; }
+  .gridwrap.compact .pc .t { display:inline; margin-right:4px; }
+  .gridwrap.compact .pc .c { display:inline; }
+  .gridwrap.compact .pc .d { margin:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .gridwrap.compact .pc .tg { font-size:9px; padding:0 4px; margin:0 2px 0 0; }
+  .gridwrap.compact .pc .tg + .tg { margin-left:0; }
+  .gridwrap.compact a.ofr { font-size:9px; padding:0 5px; margin-top:1px; }
+  .gridwrap.compact .ofrs { padding-top:1px; display:inline; }
+  .gridwrap.compact td.empty[data-new]:hover::after { padding-top:5px; }
+  /* Plein écran : seulement le choix de l'étage, la semaine et la grille */
+  body.plfull header, body.plfull #plControls, body.plfull #plSource { display:none; }
+  body.plfull main { margin:8px auto; padding:0 10px; }
+  body.plfull .gridwrap { max-height:calc(100vh - 62px); }
+  table.pg td.empty { background:#fafbfd; }
+  .pc { padding:5px 7px; height:100%; box-sizing:border-box; border-left:4px solid #c4c9d4; background:#fff; overflow:hidden; cursor:default; }
+  .pc.red { border-left-color:#d9534f; background:#fde8e6; }
+  .pc.green { border-left-color:#1a7f4b; background:#e3f5ea; }
+  .pc.yellow { border-left-color:#e0a800; background:#fff3c4; }
+  .pc .t { font-weight:600; color:#333; }
+  .pc .c { font-weight:600; }
+  .pc .d { color:var(--muted); font-size:11px; margin-top:2px; }
+  .pc.urgent .c { color:#c0262d; }
+  .pc.dim { opacity:.18; }
+  .pc .tg { font-size:10px; padding:0 5px; }
+  .pc .stk { font-size:10px; color:#555; margin-top:2px; }
+  .pc + .pc { margin-top:2px; }
+  /* fond de la case = couleur de l'événement (bande de gauche comprise), pour qu'elle reste pleine quand la ligne s'agrandit */
+  table.pg td.fill { background:#fff; box-shadow:inset 4px 0 0 #c4c9d4; }
+  table.pg td.fill-red { background:#fde8e6; box-shadow:inset 4px 0 0 #d9534f; }
+  table.pg td.fill-green { background:#e3f5ea; box-shadow:inset 4px 0 0 #1a7f4b; }
+  table.pg td.fill-yellow { background:#fff3c4; box-shadow:inset 4px 0 0 #e0a800; }
+  /* montage validé, démontage encore à faire : moitié verte / moitié rouge */
+  .pc.split, table.pg td.fill-split { background:linear-gradient(to right, #e3f5ea 0 50%, #fde8e6 50% 100%); }
+  .pc.split { border-left-color:#1a7f4b; }
+  table.pg td.fill-split { box-shadow:inset 4px 0 0 #1a7f4b; }
+  .ev.split { background:linear-gradient(to right, #f4fbf7 0 50%, #fff8f7 50% 100%); border-left-color:#1a7f4b; }
+  .tg.ok { background:#1a7f4b; color:#fff; }
+  table.ph { font-size:13px; }
+  table.ph td, table.ph th { padding:6px 8px; vertical-align:middle; }
+  table.ph select, table.ph input { padding:4px 6px; font-size:13px; }
+  table.ph select { max-width:230px; }
+  #phDlg { overflow-x:hidden; }
+  table.ph tr.off td { opacity:.45; }
+  table.ph .lack { color:var(--err); font-size:12px; }
+  table.ph .okq { color:var(--ok); font-size:12px; }
+  .phgrp { margin:12px 0 4px; font-weight:600; }
+  .lbl { font-size:13px; color:var(--muted); margin-bottom:4px; }
+  .colopts { display:flex; gap:6px; flex-wrap:wrap; }
+  .colopts label { display:inline-flex; flex-direction:row; align-items:center; gap:6px; border:1px solid var(--line); border-radius:8px; padding:6px 10px; cursor:pointer; font-size:13px; margin:0; }
+  .colopts label:has(input:checked) { outline:2px solid var(--accent); }
+  .colopts .c-red { border-left:5px solid #d9534f; } .colopts .c-green { border-left:5px solid #1a7f4b; } .colopts .c-yellow { border-left:5px solid #e0a800; }
+  .colopts input, .chk input { width:auto; margin:0; }
+  label.chk { display:flex; flex-direction:row; align-items:center; gap:6px; font-size:13px; }
+  .evrooms { max-height:190px; overflow:auto; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
+  .evrooms .fl { font-size:12px; font-weight:600; color:var(--muted); margin:6px 0 3px; }
+  .evrooms .fl:first-child { margin-top:0; }
+  .evrooms label { display:inline-flex; flex-direction:row; align-items:center; gap:4px; margin:0 12px 3px 0; font-size:13px; }
+  .evrooms input { width:auto; margin:0; }
+  td.empty[data-new] { cursor:pointer; }
+  td.empty[data-new]:hover { background:#e8f0ff; }
+  td.empty[data-new]:hover::after { content:'＋'; display:block; text-align:center; color:#7a8bb0; padding-top:14px; }
+  .pc[data-edit] { cursor:pointer; }
+  .pc[data-edit]:hover { box-shadow:inset 0 0 0 2px var(--accent); }
+  .ev[data-edit] { cursor:pointer; }
+  .ev[data-edit]:hover { box-shadow:0 0 0 2px var(--accent); }
+  textarea { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; resize:vertical; }
+  table.pdft { border-collapse:collapse; width:100%; font-size:13px; }
+  table.pdft th { text-align:left; background:#eef1f6; padding:6px 8px; position:sticky; top:0; z-index:1; }
+  table.pdft td { padding:5px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.pdft tr.dh td { background:#f6f8fb; font-weight:600; text-transform:capitalize; }
+  table.pdft tr.noav td { opacity:.55; }
+  .pdfwrap { max-height:50vh; overflow:auto; border:1px solid var(--line); border-radius:8px; margin-top:10px; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:10px; font-size:11px; font-weight:600; }
+  .pill.red { background:#fde8e6; color:#a1262b; } .pill.yellow { background:#fff3c4; color:#8a5a00; }
+  .pill.new { background:#e3f5ea; color:#176b41; } .pill.same { background:#eceff4; color:#5b667a; } .pill.differs { background:#e8f0ff; color:#2447a8; } .pill.info { background:#f1e9ff; color:#5a2ea6; }
+  .unm { border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin-top:10px; font-size:13px; }
+  .unm .u { display:flex; gap:8px; align-items:center; padding:3px 0; flex-wrap:wrap; }
+  .unm .pick { flex-basis:100%; padding:6px 0 8px 12px; }
+  .daychips { display:flex; gap:6px; flex-wrap:wrap; }
+  .daychip { padding:6px 12px; border:1px solid var(--line); border-radius:8px; background:#fff; cursor:pointer; text-align:center; font:inherit; font-size:13px; line-height:1.3; color:var(--ink); }
+  .daychip small { display:block; opacity:.65; font-size:11px; }
+  .daychip.active { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .daychip.today { box-shadow:inset 0 -3px 0 #f0b429; }
+  .daychip.zero { opacity:.5; }
+  .dot { display:inline-block; width:12px; height:12px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
+  .dot.red { background:#d9534f; } .dot.green { background:#1a7f4b; } .dot.yellow { background:#e0a800; }
+  .plday { margin:18px 0 8px; font-size:17px; text-transform:capitalize; }
+  .plsum { color:var(--muted); font-size:13px; margin:-2px 0 10px; }
+  .ev { display:flex; gap:14px; background:#fff; border:1px solid var(--line); border-left:5px solid #c4c9d4; border-radius:10px; padding:10px 14px; margin-bottom:8px; }
+  .ev.red { border-left-color:#d9534f; background:#fff8f7; }
+  .ev.green { border-left-color:#1a7f4b; background:#f4fbf7; }
+  .ev.yellow { border-left-color:#e0a800; background:#fffbea; }
+  .evtime { width:58px; flex:none; font-variant-numeric:tabular-nums; font-weight:600; font-size:14px; line-height:1.3; }
+  .evtime span { display:block; font-weight:400; color:var(--muted); }
+  .evtime.none { color:var(--muted); font-weight:400; font-size:12px; }
+  .evmain { flex:1; min-width:0; }
+  .evclient { font-size:15px; margin-right:6px; }
+  .rm { display:inline-block; background:#eef1fb; color:#2347c0; border-radius:6px; padding:1px 8px; font-size:12px; margin:0 4px 2px 0; }
+  .evdetail { color:#3a4256; font-size:14px; margin-top:2px; }
+  .evinst { font-size:12px; color:var(--muted); margin-top:4px; }
+  .evstatus { flex:none; font-size:12px; border-radius:999px; padding:2px 10px; align-self:flex-start; white-space:nowrap; }
+  .evstatus.red { background:#fdecea; color:#a1262b; } .evstatus.green { background:#e3f5ea; color:#176b41; } .evstatus.yellow { background:#fff1c2; color:#8a5a00; }
+  .tg { display:inline-block; border-radius:999px; padding:1px 9px; font-size:12px; margin-left:4px; background:#eceef3; color:#59627a; }
+  .tg.setup { background:#e3ebff; color:#2347c0; } .tg.show { background:#f0e8fd; color:#6b3fc4; } .tg.demontage { background:#ffefd9; color:#a85a00; } .tg.urgent { background:#fdecea; color:#c0392b; font-weight:600; }
+  .plerr { background:#fdecea; color:#a1262b; border-radius:8px; padding:8px 12px; margin-top:8px; flex-basis:100%; font-size:13px; }
+  .plwarn { background:#fff7e0; color:#8a5a00; border-radius:8px; padding:6px 12px; margin-top:8px; flex-basis:100%; font-size:13px; }
+  #adminLocs details.floor { margin:0; border-bottom:1px solid var(--line); }
+  #adminLocs details.floor > summary { font-size:15px; padding:10px 4px; }
+  #adminLocs table { margin:0 0 8px 20px; width:calc(100% - 20px); }
+  /* Fiches techniques : étiquette « Offre » (clic = ouvre le PDF) */
+  a.ofr { display:inline-block; margin:2px 3px 0 0; padding:2px 7px; border-radius:6px; background:#0f766e; color:#fff; font-size:11px; font-weight:600; text-decoration:none; line-height:1.3; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  a.ofr:hover { background:#0b5550; }
+  a.ofr small { font-weight:400; opacity:.9; margin-left:4px; }
+  .ofrs { padding-top:3px; }
+  .pc:not(:only-child) { height:auto; } /* plusieurs événements dans la même case : l'un sous l'autre, sans se chevaucher */
+  td.empty.hasofr { padding:4px 5px; background:#f0faf8; }
+  td.empty.hasofr:hover::after { content:none; }
+  .ofrday { background:#f0faf8; border:1px solid #b6e0d9; border-radius:10px; padding:8px 12px; margin-bottom:10px; font-size:13px; }
+  .ofrday div + div { margin-top:4px; }
+  .pill.dolce { background:#ffefd9; color:#a85a00; } .pill.ext { background:#e8f0ff; color:#2447a8; } .pill.inc { background:#eceff4; color:#5b667a; }
+  table.oft td { vertical-align:top; }
+  table.oft details summary { cursor:pointer; }
+  table.oft ul { margin:6px 0 0; padding-left:18px; }
+  table.oft input[type=date] { padding:4px 6px; }
+  a.btn { font:inherit; font-size:14px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); }
+  #ofDlg { overflow-x:hidden; }
+  .oflist .o { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:8px 0; border-bottom:1px solid var(--line); font-size:14px; }
+  dialog { border:1px solid var(--line); border-radius:12px; padding:20px; box-shadow:0 10px 40px rgba(0,0,0,.2); }
+  dialog::backdrop { background:rgba(20,26,40,.45); }
+  dialog h2 { margin-top:0; }
+</style>
+</head>
+<body class="plwide"><!-- l'app s'ouvre sur le Planning BEO (pleine largeur) -->
+<header>
+  <h1>🎛️ Stock Audiovisuel <small id="ver" style="font-weight:400;font-size:11px;opacity:.6"></small></h1>
+  <nav id="nav">
+    <button data-tab="inventaire">Inventaire</button>
+    <button data-tab="lieux">Salles</button>
+    <button data-tab="stock">Stock</button>
+    <button data-tab="mouvement">Déplacer</button>
+    <button data-tab="planning" class="active">Planning BEO</button>
+    <button data-tab="historique">Historique</button>
+    <button data-tab="admin">Gestion</button>
+  </nav>
+</header>
+<main>
+  <section id="tab-inventaire" class="hidden">
+    <div class="card row">
+      <label style="flex:1">Recherche<input id="q" placeholder="micro, batterie, HDMI…"></label>
+      <label>Catégorie<select id="catFilter"><option value="">Toutes</option></select></label>
+    </div>
+    <div class="card"><table><thead><tr><th>Matériel</th><th>Catégorie</th><th>Total</th><th>Où ?</th></tr></thead><tbody id="invBody"></tbody></table></div>
+  </section>
+
+  <section id="tab-lieux" class="hidden">
+    <div class="card row">
+      <label style="flex:1;min-width:240px">Rechercher un matériel<input id="lieuQ" placeholder="ex : micro HF, batterie, HDMI…" autocomplete="off"></label>
+      <button class="btn ghost" id="lieuClear" style="display:none">✕ Effacer</button>
+      <span class="muted" id="lieuSummary" style="padding-bottom:8px"></span>
+    </div>
+    <div class="legend"><span><i class="l-full"></i>Du matériel est installé</span><span><i class="l-empty"></i>Rien d'installé</span></div>
+    <div id="lieuxGrid"></div>
+  </section>
+
+  <section id="tab-stock" class="hidden">
+    <div class="card row">
+      <label style="flex:1;min-width:240px">Rechercher un matériel<input id="stQ" placeholder="ex : pupitre, micro, dalle…" autocomplete="off"></label>
+      <label>Catégorie<select id="stCat"><option value="">Toutes</option></select></label>
+      <label class="chk" style="padding-bottom:8px"><input type="checkbox" id="stEmpty"> Afficher aussi le matériel absent du stock</label>
+    </div>
+    <div id="stockGrid"></div>
+  </section>
+
+  <section id="tab-mouvement" class="hidden">
+    <div class="card">
+      <h2><span class="step">1</span> D'où vers où ?</h2>
+      <div class="row">
+        <label style="flex:1;min-width:200px">De<select id="mvFrom"></select></label>
+        <span class="arrow">→</span>
+        <label style="flex:1;min-width:200px">Vers<select id="mvTo"></select></label>
+      </div>
+      <p class="muted" style="margin:10px 0 0">« Extérieur » = entrée de matériel (achat, retour) ou sortie (HS, rendu).</p>
+      <p class="warn" id="mvWarn"></p>
+    </div>
+    <div class="card">
+      <h2><span class="step">2</span> Quel matériel ?</h2>
+      <div class="row">
+        <label style="flex:1;min-width:240px">Matériel<select id="mvItem"></select></label>
+        <label>Quantité<input id="mvQty" type="number" min="1" value="1" style="width:90px"></label>
+        <button class="btn" id="mvAdd">+ Ajouter à la liste</button>
+        <button class="btn ghost" id="mvAll" style="display:none" title="Remplit la liste avec tout le matériel présent à la source">Tout le contenu de la source</button>
+      </div>
+      <table id="mvCart" style="margin-top:14px"><thead><tr><th>Matériel</th><th style="width:110px">Quantité</th><th></th></tr></thead><tbody id="mvCartBody"></tbody></table>
+    </div>
+    <div class="card">
+      <h2><span class="step">3</span> Valider</h2>
+      <div class="row">
+        <label style="flex:1;min-width:240px">Note (optionnel)<input id="mvNote" placeholder="Facultatif — sinon « Montage Salle » ou « Démontage Salle » est ajouté tout seul"></label>
+        <button class="btn ghost" id="mvClear">Vider la liste</button>
+        <button class="btn" id="mvGo">Valider le déplacement</button>
+      </div>
+      <p class="muted" id="mvSummary" style="margin:10px 0 0"></p>
+    </div>
+  </section>
+
+  <section id="tab-planning">
+    <!-- Grille en premier : le choix de l'étage est collé juste au-dessus, les réglages (semaine, vue, recherche) en dessous -->
+    <div class="plbar">
+      <div class="seg plareas" id="plAreas"></div>
+      <div class="daychips" id="plDays"></div>
+      <span class="plweek"><button class="wk" id="plPrev2" title="Semaine précédente">◀</button><span id="plWeekInfo"></span><button class="wk" id="plNext2" title="Semaine suivante">▶</button>
+        <span class="seg plsize" id="plDensity" title="Taille des cases de la grille"><button data-d="compact">Compacte</button><button data-d="detail">Détaillée</button></span>
+        <button class="wk" id="plFull" title="Afficher la grille sur tout l'écran (Échap pour sortir)">⛶ Plein écran</button></span>
+    </div>
+    <div id="plBody"></div>
+    <div class="card" id="plControls" style="margin-top:14px">
+      <div class="row" style="align-items:center;margin-bottom:12px">
+        <div class="seg"><button id="plPrev" title="Semaine précédente">◀</button><button id="plWeekLbl" disabled style="min-width:230px;font-weight:600"></button><button id="plNext" title="Semaine suivante">▶</button></div>
+        <button class="btn ghost" id="plToday">Cette semaine</button>
+        <div class="seg" id="plView"><button data-v="grid">▦ Grille</button><button data-v="list">☰ Liste</button></div>
+        <span style="flex:1"></span>
+        <button class="btn" id="plNew">＋ Nouvel événement</button>
+      </div>
+      <div class="row">
+        <label style="flex:1;min-width:220px">Rechercher (client, salle, description…)<input id="plQ" placeholder="ex : HUSQVARNA, Coco 2, LCD…" autocomplete="off"></label>
+      </div>
+      <div class="legend" id="plLegend" style="margin:12px 0 0">
+        <span><i class="dot red"></i>À préparer</span><span><i class="dot green"></i>Prêt</span><span><i class="dot yellow"></i>Prospect</span>
+        <span class="muted" style="margin-left:auto">Clique sur une case pour la modifier, sur une case vide pour ajouter.</span>
+      </div>
+    </div>
+    <div class="plsrc" id="plSource" style="margin-top:16px"></div>
+  </section>
+
+  <section id="tab-historique" class="hidden">
+    <p class="muted" style="margin:0 0 12px">Un déplacement par ligne : clique dessus pour voir le matériel concerné.</p>
+    <div id="histList"></div>
+  </section>
+
+  <section id="tab-admin" class="hidden">
+    <div class="card">
+      <h2>Nouveau matériel</h2>
+      <div class="row">
+        <label style="flex:1">Nom<input id="newName" placeholder="Micro HF Shure SM58"></label>
+        <label>Catégorie<select id="newCatSel"></select></label>
+        <label id="newCatWrap" style="display:none">Nom de la nouvelle catégorie<input id="newCat" list="cats" placeholder="ex : Micros"></label>
+        <datalist id="cats"></datalist>
+        <label>Quantité initiale<input id="newQty" type="number" min="0" value="0" style="width:110px"></label>
+        <label>Dans<select id="newLoc"></select></label>
+        <button class="btn" id="addItem">Ajouter</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Nouvel emplacement</h2>
+      <div class="row">
+        <label style="flex:1">Nom<input id="locName" placeholder="Salle Panorama"></label>
+        <label>Type<select id="locKind"><option value="salle">Salle</option><option value="stock">Stock</option></select></label>
+        <label id="locFloorWrap">Étage<select id="locFloor"></select></label>
+        <button class="btn" id="addLoc">Ajouter</button>
+      </div>
+    </div>
+    <div class="card"><h2>Emplacements existants</h2><div id="adminLocs"></div></div>
+    <div class="card"><h2>Catalogue</h2><table><tbody id="adminItems"></tbody></table></div>
+    <div class="card">
+      <h2>Matériel retiré</h2>
+      <table><thead><tr><th>Date</th><th>Matériel</th><th>Qté</th><th>Retiré de</th><th>Statut</th><th>Raison</th></tr></thead><tbody id="retiredBody"></tbody></table>
+    </div>
+  </section>
+</main>
+<dialog id="editDlg">
+  <h2>Modifier l'emplacement</h2>
+  <div style="display:flex;flex-direction:column;gap:12px;min-width:280px">
+    <label>Nom<input id="editName"></label>
+    <label id="editFloorWrap">Étage<select id="editFloor"></select></label>
+    <label id="editEquipWrap">Équipement inclus de la salle <span style="font-weight:400">(une ligne par élément, ex. « 1 × Projecteur »)</span>
+      <textarea id="editEquip" rows="5" placeholder="1 × Projector PT-RZ970&#10;2 × Lectern microphone&#10;1 × Amplification"></textarea>
+      <span class="muted" id="editEquipSrc" style="font-size:12px"></span></label>
+  </div>
+  <div class="row" style="margin-top:18px;justify-content:space-between">
+    <button type="button" class="btn ghost" id="editDel" style="color:var(--err)">Supprimer</button>
+    <span class="row"><button type="button" class="btn ghost" id="editCancel">Annuler</button><button type="button" class="btn" id="editSave">Enregistrer</button></span>
+  </div>
+</dialog>
+<dialog id="itemDlg">
+  <h2>Modifier le matériel</h2>
+  <div style="display:flex;flex-direction:column;gap:12px;min-width:320px">
+    <label>Nom<input id="itName"></label>
+    <label>Catégorie<select id="itCatSel"></select></label>
+    <label id="itCatWrap" style="display:none">Nom de la nouvelle catégorie<input id="itCat" list="cats" placeholder="ex : Micros"></label>
+    <p class="muted" id="itInfo" style="margin:0"></p>
+    <div class="row">
+      <label>Ajouter des pièces<input id="itQty" type="number" min="0" value="0" style="width:110px"></label>
+      <label style="flex:1">Dans le stock<select id="itLoc"></select></label>
+    </div>
+  </div>
+  <div class="row" style="margin-top:18px;justify-content:space-between;align-items:center">
+    <button type="button" class="btn ghost" id="itDel" style="color:var(--err)">Supprimer la fiche</button>
+    <span class="row"><button type="button" class="btn ghost" id="itCancel">Annuler</button><button type="button" class="btn" id="itSave">Enregistrer</button></span>
+  </div>
+  <p class="muted" id="itDelHint" style="margin:10px 0 0;max-width:340px"></p>
+</dialog>
+<dialog id="pdfDlg">
+  <h2>Importer le BEO Book (PDF)</h2>
+  <div style="width:min(1100px,92vw)">
+    <label>Fichier PDF<input type="file" id="pdfFile" accept=".pdf,application/pdf"></label>
+    <p class="warn" id="pdfErr"></p>
+    <div id="pdfBody"></div>
+  </div>
+  <div class="row" style="margin-top:14px;justify-content:space-between;align-items:center">
+    <span class="muted" id="pdfCount"></span>
+    <span class="row"><button type="button" class="btn ghost" id="pdfClose">Fermer</button><button type="button" class="btn" id="pdfGo" disabled>Importer</button></span>
+  </div>
+</dialog>
+<dialog id="ofDlg">
+  <h2>Fiches techniques (offres)</h2>
+  <div style="width:min(960px,calc(100vw - 90px))">
+    <label>Ajouter une fiche technique (PDF)<input type="file" id="ofFile" accept=".pdf,application/pdf"></label>
+    <p class="warn" id="ofErr"></p>
+    <div id="ofBody"></div>
+  </div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button type="button" class="btn ghost" id="ofBack" style="display:none">← Offres enregistrées</button>
+    <span style="flex:1"></span>
+    <button type="button" class="btn ghost" id="ofClose">Fermer</button><button type="button" class="btn" id="ofSave" style="display:none">Enregistrer l'offre</button>
+  </div>
+</dialog>
+<dialog id="phDlg">
+  <h2 id="phTitle">Prêt</h2>
+  <div style="width:min(980px,calc(100vw - 90px))">
+    <div id="phChoice" style="margin-bottom:10px"></div>
+    <div id="phBody"></div>
+    <p class="warn" id="phErr"></p>
+  </div>
+  <div class="row" style="margin-top:14px;align-items:center">
+    <button type="button" class="btn ghost" id="phBack">← Retour</button>
+    <span style="flex:1"></span>
+    <button type="button" class="btn ghost" id="phNoMove" title="Marque l'étape comme faite sans toucher au stock">Valider sans déplacer</button>
+    <button type="button" class="btn" id="phGo" style="background:#1a7f4b;border-color:#1a7f4b">Valider</button>
+  </div>
+</dialog>
+<dialog id="evDlg">
+  <h2 id="evTitle">Événement</h2>
+  <div style="display:flex;flex-direction:column;gap:12px;width:min(560px,90vw)">
+    <label>Société / client<input id="evClient" autocomplete="off"></label>
+    <div class="row">
+      <label style="flex:1">Début<input type="time" id="evStart"></label>
+      <label style="flex:1">Fin<input type="time" id="evEnd"></label>
+      <label style="flex:1.3">Date<input type="date" id="evDate"></label>
+      <label style="flex:1.3">Jusqu'au<input type="date" id="evEndDate"></label>
+    </div>
+    <label>Description<textarea id="evDetail" rows="2" placeholder="ex : LCD + HFS"></textarea></label>
+    <div><div class="lbl">Statut</div>
+      <div class="colopts" id="evColors">
+        <label class="c-red"><input type="radio" name="evColor" value="red">À préparer</label>
+        <label class="c-green"><input type="radio" name="evColor" value="green">Prêt</label>
+        <label class="c-yellow"><input type="radio" name="evColor" value="yellow">Prospect</label>
+        <label class="c-none"><input type="radio" name="evColor" value="">Sans couleur</label>
+      </div></div>
+    <div><div class="lbl">Étiquettes</div><div class="colopts" id="evTags"></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="evUrgent"> ⚠ Important (affiché en rouge)</label>
+      <div id="evDone" class="plwarn" style="display:none;margin-top:8px"></div></div>
+    <div><div class="lbl">Salles <small class="muted" id="evRoomsHint"></small></div><div id="evRooms" class="evrooms"></div></div>
+    <p class="warn" id="evErr"></p>
+  </div>
+  <div class="row" style="margin-top:14px;justify-content:space-between">
+    <button type="button" class="btn ghost" id="evDel" style="color:var(--err)">Supprimer</button>
+    <span class="row"><button type="button" class="btn ghost" id="evCancel">Annuler</button><button type="button" class="btn" id="evSave">Enregistrer</button></span>
+  </div>
+</dialog>
+<dialog id="retireDlg">
+  <h2>Retirer du matériel</h2>
+  <p style="margin:0 0 6px"><b id="retName"></b></p>
+  <p class="muted" id="retInfo" style="margin:0 0 12px"></p>
+  <p id="retNone" class="warn" style="display:none">Aucune pièce en stock : rien à retirer pour le moment. (Pour supprimer une fiche vide, utilise « Modifier ».)</p>
+  <div id="retForm" style="display:flex;flex-direction:column;gap:12px;min-width:300px">
+    <label>Depuis<select id="retFrom"></select></label>
+    <label>Quantité à retirer<input id="retQty" type="number" min="1" value="1"></label>
+    <label>Raison (optionnel)<input id="retNote" placeholder="ex : cassé, perdu, ancien modèle…"></label>
+    <p class="muted" style="margin:0">Le matériel retiré n'est pas effacé : il reste visible dans la liste « Matériel retiré ».</p>
+  </div>
+  <div class="row" style="margin-top:18px;justify-content:flex-end">
+    <button type="button" class="btn ghost" id="retCancel">Annuler</button>
+    <button type="button" class="btn" id="retGo">Retirer</button>
+  </div>
+</dialog>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+let D = { locations: [], items: [], stock: [] };
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body) } : undefined);
+  const txt = await r.text();
+  let j;
+  try { j = JSON.parse(txt); } catch {
+    throw new Error(r.status === 404
+      ? `Le serveur ne connaît pas l'action ${path} : il tourne encore avec une ancienne version. Arrête-le (Ctrl+C), vérifie que server.js est à jour, puis relance « node server.js ».`
+      : `Réponse inattendue du serveur (${r.status}) pour ${path}`);
+  }
+  if (!r.ok) throw new Error(j.error || 'Erreur');
+  return j;
+}
+function toast(msg, err) {
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'block';
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 2800);
+}
+const floorLabel = (f) => (f === null || f === undefined ? 'Autres espaces' : f > 0 ? `Étage +${f}` : `Étage ${f}`);
+function locGroups() {
+  const out = [];
+  const stocks = D.locations.filter((l) => l.kind === 'stock');
+  if (stocks.length) out.push({ label: 'Stocks', locs: stocks });
+  const salles = D.locations.filter((l) => l.kind === 'salle');
+  [...new Set(salles.map((l) => l.floor).filter((f) => f !== null))].sort((a, b) => a - b)
+    .forEach((f) => out.push({ label: floorLabel(f), locs: salles.filter((l) => l.floor === f) }));
+  const others = salles.filter((l) => l.floor === null);
+  if (others.length) out.push({ label: 'Autres espaces', locs: others });
+  return out;
+}
+const locName = (id) => D.locations.find((l) => l.id === id)?.name ?? '—';
+const qtyAt = (item, loc) => D.stock.find((s) => s.item_id === item && s.location_id === loc)?.qty || 0;
+
+async function load() {
+  D = await api('/api/data');
+  render();
+}
+let BUILD_LOADED = null;
+fetch('/api/version').then((r) => r.json()).then((v) => { BUILD_LOADED = v.build; $('#ver').textContent = 'version ' + v.build.replace(/^v/, ''); })
+  .catch(() => { $('#ver').textContent = '⚠ ancien serveur (version inconnue)'; $('#ver').style.color = '#ffb4a8'; $('#ver').style.opacity = 1; });
+// Mise à jour automatique : si le serveur passe à une nouvelle version, la page se recharge (sauf fenêtre ouverte)
+setInterval(async () => {
+  try {
+    const v = await (await fetch('/api/version', { cache: 'no-store' })).json();
+    if (BUILD_LOADED && v.build !== BUILD_LOADED && !document.querySelector('dialog[open]')) {
+      try { sessionStorage.setItem('justUpdated', v.build); } catch {}
+      location.reload();
+    }
+  } catch {}
+}, 60000);
+try { const u = sessionStorage.getItem('justUpdated'); if (u) { sessionStorage.removeItem('justUpdated'); setTimeout(() => toast(`Application mise à jour ✔ (version ${u.replace(/^v/, '')})`), 800); } } catch {}
+
+function render() {
+  // Filtres / listes
+  const cats = [...new Set(D.items.map((i) => i.category))].sort();
+  const cur = $('#catFilter').value;
+  $('#catFilter').innerHTML = '<option value="">Toutes</option>' + cats.map((c) => `<option ${c===cur?'selected':''}>${esc(c)}</option>`).join('');
+  $('#cats').innerHTML = cats.map((c) => `<option value="${esc(c)}">`).join('');
+  const keepCat = $('#newCatSel').value;
+  $('#newCatSel').innerHTML = cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('') + '<option value="__new__">+ Nouvelle catégorie…</option>';
+  if ([...$('#newCatSel').options].some((o) => o.value === keepCat)) $('#newCatSel').value = keepCat;
+  toggleNewCat();
+
+  // Inventaire
+  const q = $('#q').value.toLowerCase(), cf = $('#catFilter').value;
+  const rows = D.items.filter((i) => (!cf || i.category === cf) && (i.name + i.category).toLowerCase().includes(q));
+  $('#invBody').innerHTML = rows.map((i) => {
+    const where = D.stock.filter((s) => s.item_id === i.id);
+    const total = where.reduce((a, s) => a + s.qty, 0);
+    const tags = where.map((s) => {
+      const kind = D.locations.find((l) => l.id === s.location_id)?.kind;
+      return `<span class="tag ${kind}">${esc(locName(s.location_id))} × ${s.qty}</span>`;
+    }).join('') || '<span class="muted">Aucun stock</span>';
+    return `<tr><td><b>${esc(i.name)}</b></td><td>${esc(i.category)}</td><td>${total}</td><td>${tags}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">Aucun matériel</td></tr>';
+
+  renderLieux();
+  renderStock();
+
+  // Formulaire mouvement
+  renderMoveForm();
+  $('#newLoc').innerHTML = D.locations.filter((l) => l.kind === 'stock').map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  const sel = D.locations.find((l) => l.name === 'Stock principal'); if (sel && !$('#newLoc').dataset.set) { $('#newLoc').value = sel.id; $('#newLoc').dataset.set = 1; }
+
+  // Admin
+  $('#adminLocs').innerHTML = locGroups().map((g) =>
+    `<details class="floor" data-g="${esc(g.label)}" ${adminOpen[g.label] ? 'open' : ''}><summary>${esc(g.label)} <span class="count">${g.locs.length}</span></summary>` +
+    `<table><tbody>${g.locs.map((l) => `<tr><td>${esc(l.name)}</td><td style="text-align:right"><button class="btn ghost small" data-edit="${l.id}">Modifier</button></td></tr>`).join('')}</tbody></table></details>`
+  ).join('');
+  $('#adminItems').innerHTML = D.items.map((i) => {
+    let inStock = 0, inSalle = 0;
+    D.stock.filter((s) => s.item_id === i.id).forEach((s) => {
+      if (D.locations.find((l) => l.id === s.location_id)?.kind === 'stock') inStock += s.qty; else inSalle += s.qty;
+    });
+    return `<tr><td>${esc(i.name)}</td><td class="muted">${esc(i.category)}</td><td class="muted">En stock : ${inStock} · En salle : ${inSalle}</td><td style="text-align:right;white-space:nowrap"><button class="btn ghost small" data-itedit="${i.id}">Modifier</button> <button class="btn ghost small" data-retire="${i.id}">Retirer…</button></td></tr>`;
+  }).join('') || '<tr><td class="muted">Catalogue vide</td></tr>';
+}
+
+// ---- Onglet "Salles" : sections par étage (les stocks ont leur propre onglet) + recherche de matériel ----
+const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const lieuOpen = {}; // sections repliées/dépliées par l'utilisateur (hors recherche)
+
+// Équipement fixe (inclus) d'une salle
+const equipOf = (l) => { try { return JSON.parse(l.equipment || '[]'); } catch { return []; } };
+
+// Matériel externe actuellement installé dans une salle : noté au montage d'une offre, retiré au démontage
+function externalIn(roomId) {
+  const last = new Map(); // dernière validation (montage ou démontage) par offre + salle de la fiche
+  for (const m of PL.offerMoves || []) for (const x of m.external || []) last.set(`${x.offer_id}|${x.room_name}`, m);
+  const out = [];
+  for (const [k, m] of last) {
+    if (m.phase !== 'Montage') continue;
+    const [oid, rn] = [Number(k.split('|')[0]), k.slice(k.indexOf('|') + 1)];
+    const client = PL.offers.find((o) => o.id === oid)?.client || '';
+    for (const x of m.external) if (x.offer_id === oid && x.room_name === rn && x.room_ids.includes(roomId)) out.push({ ...x, client });
+  }
+  return out;
+}
+
+function renderLieux() {
+  const q = norm($('#lieuQ').value);
+  const matches = (it) => !q || norm(it.name + ' ' + it.category).includes(q);
+  let rooms = 0, pieces = 0;
+  const html = locGroups().filter((g) => g.label !== 'Stocks').map((g) => {
+    const cards = g.locs.map((l) => {
+      const lines = D.stock.filter((s) => s.location_id === l.id)
+        .map((s) => ({ s, i: D.items.find((i) => i.id === s.item_id), hit: false }))
+        .sort((a, b) => a.i.name.localeCompare(b.i.name));
+      lines.forEach((x) => (x.hit = matches(x.i)));
+      const ext = externalIn(l.id).map((x) => ({ ...x, hit: !q || norm(x.name + ' ' + x.supplier).includes(q) }));
+      const eq = equipOf(l).map((x) => ({ ...x, hit: !q || norm(x.name).includes(q) }));
+      if (q && !lines.some((x) => x.hit) && !ext.some((x) => x.hit) && !eq.some((x) => x.hit)) return ''; // recherche : on ne garde que les emplacements concernés
+      if (q) { rooms++; pieces += lines.filter((x) => x.hit).reduce((a, x) => a + x.s.qty, 0) + ext.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0); }
+      // 1) équipement inclus (fixe) — séparé du matériel installé : 2) depuis le stock, 3) par une société externe
+      const eqHtml = eq.length ? `<div class="eqin"><div class="lbl">Équipement de la salle (inclus)</div>${eq.map((x) =>
+        `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}">${x.qty} × ${esc(x.name)}</div>`).join('')}</div>` : '';
+      const extHtml = ext.length ? `<div class="extin"><div class="lbl">Installé par une société externe</div>${ext.map((x) =>
+        `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}" title="${esc(x.client)}">${x.qty} × ${esc(x.name)} <span class="pill ext">${esc(x.supplier)}</span></div>`).join('')}</div>` : '';
+      const actions = ''; // actions (amener, vider, équipement) : clic sur la carte → petit menu
+      const full = lines.length || ext.length;
+      return `<div class="card ${full ? 'filled' : 'vide'} ${q ? 'found' : ''}" data-room="${l.id}" title="Clic : amener du matériel, vider la salle, modifier l'équipement"><h3>${esc(l.name)}</h3>${actions}` +
+        (lines.length
+          ? `<div class="lbl stk">Installé depuis le stock</div><table><tbody>${lines.map(({ s, i, hit }) => `<tr class="${q ? (hit ? 'hit' : 'dim') : ''}"><td>${esc(i.name)}</td><td style="text-align:right"><b>${s.qty}</b></td></tr>`).join('')}</tbody></table>`
+          : '') + extHtml + eqHtml + '</div>';
+    }).filter(Boolean);
+    if (q && !cards.length) return ''; // recherche : sections sans résultat masquées
+    const open = q ? true : (lieuOpen[g.label] ?? true);
+    return `<details class="floor" data-g="${esc(g.label)}" ${open ? 'open' : ''}><summary>${esc(g.label)} <span class="count">${q ? cards.length : g.locs.length}</span></summary><div class="grid rooms">${cards.join('')}</div></details>`;
+  }).join('');
+  $('#lieuxGrid').innerHTML = html || (q ? '<div class="card muted">Aucun matériel ne correspond à cette recherche.</div>' : '');
+  $('#lieuClear').style.display = q ? '' : 'none';
+  $('#lieuSummary').textContent = q
+    ? (rooms ? `${pieces} pièce${pieces > 1 ? 's' : ''} trouvée${pieces > 1 ? 's' : ''} dans ${rooms} emplacement${rooms > 1 ? 's' : ''}` : '')
+    : '';
+}
+$('#lieuQ').addEventListener('input', renderLieux);
+
+// ---- Onglet "Stock" : le contenu de chaque stock, par catégorie (+ où se trouve le reste) ----
+function renderStock() {
+  const cats = [...new Set(D.items.map((i) => i.category))].sort();
+  const cur = $('#stCat').value;
+  $('#stCat').innerHTML = '<option value="">Toutes</option>' + cats.map((c) => `<option ${c === cur ? 'selected' : ''}>${esc(c)}</option>`).join('');
+  const q = norm($('#stQ').value), cf = $('#stCat').value, showEmpty = $('#stEmpty').checked;
+  const ok = (i) => (!cf || i.category === cf) && (!q || norm(i.name + ' ' + i.category).includes(q));
+  const html = D.locations.filter((l) => l.kind === 'stock').map((st) => {
+    const items = D.items.filter(ok).map((i) => ({ i, here: qtyAt(i.id, st.id) })).filter((x) => x.here > 0 || showEmpty);
+    const pieces = items.reduce((a, x) => a + x.here, 0);
+    let body = '';
+    for (const c of [...new Set(items.map((x) => x.i.category))].sort()) {
+      body += `<tr class="dh"><td colspan="3">${esc(c)}</td></tr>` + items.filter((x) => x.i.category === c).sort((a, b) => a.i.name.localeCompare(b.i.name)).map(({ i, here }) => {
+        const elsewhere = D.stock.filter((s) => s.item_id === i.id && s.location_id !== st.id)
+          .map((s) => `<span class="tag ${D.locations.find((l) => l.id === s.location_id)?.kind}">${esc(locName(s.location_id))} × ${s.qty}</span>`).join('');
+        return `<tr class="${here ? '' : 'noav'}"><td><b>${esc(i.name)}</b></td><td style="text-align:right;width:70px;font-size:16px"><b>${here}</b></td><td>${elsewhere || '<span class="muted">—</span>'}</td></tr>`;
+      }).join('');
+    }
+    return `<div class="card"><h2 style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">${esc(st.name)} <span class="count">${items.filter((x) => x.here).length} référence${items.filter((x) => x.here).length > 1 ? 's' : ''} · ${pieces} pièce${pieces > 1 ? 's' : ''}</span></h2>` +
+      (body ? `<table class="pdft"><thead><tr><th>Matériel</th><th style="text-align:right">Ici</th><th>Ailleurs (autres stocks, salles)</th></tr></thead><tbody>${body}</tbody></table>`
+        : `<p class="muted" style="margin:0">${q || cf ? 'Rien ne correspond dans ce stock.' : 'Stock vide.'}</p>`) + '</div>';
+  }).join('');
+  $('#stockGrid').innerHTML = html || '<div class="card muted">Aucun stock : ajoute-en un dans Gestion.</div>';
+}
+['stQ', 'stCat', 'stEmpty'].forEach((id) => $('#' + id).addEventListener(id === 'stQ' ? 'input' : 'change', renderStock));
+$('#lieuClear').onclick = () => { $('#lieuQ').value = ''; renderLieux(); $('#lieuQ').focus(); };
+// Raccourcis sur une salle (onglet "Salles")
+const mainStock = () => D.locations.find((l) => l.kind === 'stock' && l.name === 'Stock principal') || D.locations.find((l) => l.kind === 'stock');
+function openMovement() {
+  document.querySelector('nav button[data-tab="mouvement"]').click();
+  window.scrollTo({ top: 0 });
+}
+// Vider : tout le contenu de la salle dans la liste de déplacement, destination = stock principal
+function roomEmpty(id) {
+  if (cart.length && !confirm('Remplacer la liste de déplacement en cours par le contenu de cette salle ?')) return;
+  openMovement();
+  $('#mvFrom').value = String(id); $('#mvTo').value = '';
+  renderMoveForm();
+  fillCartFromSource();
+}
+// Amener du matériel : stock principal → cette salle, prêt à choisir le matériel
+function roomFill(id) {
+  const st = mainStock();
+  if (!st) return toast('Aucun stock défini', true);
+  if (cart.length && !confirm('Remplacer la liste de déplacement en cours ?')) return;
+  cart.length = 0;
+  openMovement();
+  $('#mvFrom').value = String(st.id);   // ne s'applique que si le stock contient du matériel
+  renderMoveForm();                      // "Vers" est recalculé sans la source
+  $('#mvTo').value = String(id);
+  renderMoveForm();
+  if (mvFrom() !== st.id) toast(`« ${st.name} » est vide : rien à envoyer pour l'instant`, true);
+  else $('#mvItem').focus();
+}
+// Clic sur une carte de salle : petit menu d'actions (pas de boutons permanents sur les cartes)
+const roomMenu = document.createElement('div');
+roomMenu.className = 'roommenu'; roomMenu.hidden = true;
+document.body.appendChild(roomMenu);
+$('#lieuxGrid').addEventListener('click', (e) => {
+  const card = e.target.closest('[data-room]'); if (!card) return;
+  const id = Number(card.dataset.room);
+  if (!roomMenu.hidden && Number(roomMenu.dataset.room) === id) { roomMenu.hidden = true; return; }
+  const full = D.stock.some((s) => s.location_id === id);
+  roomMenu.dataset.room = id;
+  roomMenu.innerHTML = `<div class="rmh">${esc(locName(id))}</div>
+    <button type="button" data-act="fill">＋ Amener du matériel du stock</button>
+    ${full ? '<button type="button" data-act="empty">← Vider la salle vers le stock</button>' : ''}
+    <button type="button" data-act="equip">✎ Modifier l'équipement inclus</button>`;
+  roomMenu.hidden = false;
+  const r = card.getBoundingClientRect(), mw = 250;
+  roomMenu.style.left = `${Math.min(window.scrollX + r.left + 10, window.scrollX + document.documentElement.clientWidth - mw - 10)}px`;
+  roomMenu.style.top = `${window.scrollY + r.top + 34}px`;
+  e.stopPropagation();
+});
+roomMenu.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-act]'); if (!b) return;
+  const id = Number(roomMenu.dataset.room); roomMenu.hidden = true;
+  if (b.dataset.act === 'fill') roomFill(id);
+  else if (b.dataset.act === 'empty') roomEmpty(id);
+  else openLocEdit(id);
+});
+document.addEventListener('click', (e) => { if (!roomMenu.hidden && !roomMenu.contains(e.target)) roomMenu.hidden = true; });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') roomMenu.hidden = true; });
+window.addEventListener('scroll', () => { roomMenu.hidden = true; }, { passive: true });
+$('#lieuxGrid').addEventListener('toggle', (e) => { if (!$('#lieuQ').value.trim() && e.target.dataset.g) lieuOpen[e.target.dataset.g] = e.target.open; }, true);
+
+// ---- Onglet "Déplacer" : liste de matériel à déplacer ----
+const cart = []; // [{ item_id, qty }]
+const mvFrom = () => Number($('#mvFrom').value) || null;
+const mvTo = () => Number($('#mvTo').value) || null;
+
+function renderMoveForm() {
+  const kf = $('#mvFrom').value, kt = $('#mvTo').value;
+  const filled = new Set(D.stock.map((s) => s.location_id)); // emplacements qui contiennent du matériel
+  const locOpts = (ext, exclude, onlyFilled) => `<option value="">${ext}</option>` + locGroups().map((g) => {
+    const locs = g.locs.filter((l) => String(l.id) !== exclude && (!onlyFilled || filled.has(l.id)));
+    return locs.length ? `<optgroup label="${esc(g.label)}">` + locs.map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('') + '</optgroup>' : '';
+  }).join('');
+  // "De" : seulement les emplacements qui contiennent du matériel (ou "Extérieur" pour une entrée)
+  $('#mvFrom').innerHTML = locOpts('Extérieur (entrée de matériel)', '', true);
+  if ([...$('#mvFrom').options].some((o) => o.value === kf)) $('#mvFrom').value = kf;
+  // L'emplacement choisi en "De" n'apparaît plus dans "Vers"
+  $('#mvTo').innerHTML = locOpts('Extérieur (sortie du matériel)', $('#mvFrom').value);
+  if ([...$('#mvTo').options].some((o) => o.value === kt)) $('#mvTo').value = kt;
+  const from = mvFrom(), to = mvTo();
+
+  // retire de la liste le matériel supprimé du catalogue
+  for (let i = cart.length - 1; i >= 0; i--) if (!D.items.some((x) => x.id === cart[i].item_id)) cart.splice(i, 1);
+
+  // Choix du matériel : si une source est choisie, seulement ce qui s'y trouve
+  const keep = $('#mvItem').value;
+  const items = D.items.filter((i) => !from || qtyAt(i.id, from) > 0);
+  // Disponible = quantité à la source moins ce qui est déjà dans la liste à déplacer
+  const remaining = (id) => qtyAt(id, from) - (cart.find((l) => l.item_id === id)?.qty || 0);
+  const cats = [...new Set(items.map((i) => i.category))].sort();
+  $('#mvItem').innerHTML = items.length
+    ? cats.map((c) => `<optgroup label="${esc(c)}">` + items.filter((i) => i.category === c).map((i) => {
+        const left = from ? Math.max(0, remaining(i.id)) : null;
+        return `<option value="${i.id}" ${from && left === 0 ? 'disabled' : ''}>${esc(i.name)}${from ? ` (dispo : ${left})` : ''}</option>`;
+      }).join('') + '</optgroup>').join('')
+    : `<option value="">${from ? 'Rien en stock à cet endroit' : 'Catalogue vide'}</option>`;
+  const enabled = [...$('#mvItem').options].filter((o) => o.value && !o.disabled);
+  if (keep && enabled.some((o) => o.value === keep)) $('#mvItem').value = keep;
+  else if (enabled.length) $('#mvItem').value = enabled[0].value; // l'article sélectionné est épuisé : passe au suivant
+  $('#mvAdd').disabled = !enabled.length;
+  // "Tout le contenu" : seulement si une source est choisie et qu'elle contient du matériel
+  const nbRefs = from ? items.length : 0;
+  $('#mvAll').style.display = nbRefs ? '' : 'none';
+  $('#mvAll').textContent = `Tout le contenu de « ${from ? locName(from) : ''} » (${nbRefs} réf.)`;
+
+  // Liste à déplacer
+  const over = (l) => from && l.qty > qtyAt(l.item_id, from);
+  $('#mvCartBody').innerHTML = cart.map((l) => {
+    const it = D.items.find((x) => x.id === l.item_id);
+    return `<tr class="${over(l) ? 'over' : ''}"><td><b>${esc(it.name)}</b> <span class="muted">${esc(it.category)}</span>${over(l) ? `<br><small>Seulement ${qtyAt(l.item_id, from)} disponible(s) à « ${esc(locName(from))} »</small>` : ''}</td>` +
+      `<td><input type="number" min="1" value="${l.qty}" data-cartqty="${l.item_id}"></td>` +
+      `<td style="text-align:right"><button class="btn ghost small" data-cartrm="${l.item_id}" title="Retirer de la liste">✕</button></td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="muted">La liste est vide : choisis du matériel ci-dessus puis « Ajouter à la liste ».</td></tr>';
+
+  // Contrôles + résumé
+  let warn = '';
+  if (!from && !to) warn = 'Choisis au moins une source ou une destination.';
+  else if (from && to && from === to) warn = 'La source et la destination sont identiques.';
+  $('#mvWarn').textContent = warn;
+  const total = cart.reduce((a, l) => a + l.qty, 0);
+  const anyOver = cart.some(over);
+  $('#mvGo').disabled = !cart.length || !!warn || anyOver;
+  $('#mvClear').disabled = !cart.length;
+  $('#mvSummary').textContent = cart.length
+    ? `${cart.length} référence${cart.length > 1 ? 's' : ''}, ${total} pièce${total > 1 ? 's' : ''} : ${from ? locName(from) : 'Extérieur'} → ${to ? locName(to) : 'Extérieur'}${anyOver ? ' — corrige les quantités en rouge' : ''}`
+    : '';
+}
+
+// Remplit la liste avec tout ce que contient la source (ex : démontage d'une salle)
+function fillCartFromSource() {
+  const from = mvFrom(); if (!from) return;
+  const all = D.stock.filter((s) => s.location_id === from);
+  if (!all.length) return toast('Cet emplacement est vide', true);
+  cart.length = 0;
+  all.forEach((s) => cart.push({ item_id: s.item_id, qty: s.qty }));
+  // Démontage d'une salle : destination par défaut = stock principal (si aucune destination n'est choisie)
+  if (!mvTo() && D.locations.find((l) => l.id === from)?.kind === 'salle') {
+    const st = D.locations.find((l) => l.kind === 'stock' && l.name === 'Stock principal') || D.locations.find((l) => l.kind === 'stock');
+    if (st) $('#mvTo').value = String(st.id);
+  }
+  renderMoveForm();
+  toast(`${all.length} référence${all.length > 1 ? 's' : ''} ajoutée${all.length > 1 ? 's' : ''} à la liste`);
+}
+$('#mvAll').onclick = () => {
+  if (cart.length && !confirm('Remplacer la liste actuelle par tout le contenu de la source ?')) return;
+  fillCartFromSource();
+};
+
+function addToCart() {
+  const item_id = Number($('#mvItem').value), qty = Number($('#mvQty').value), from = mvFrom();
+  if (!item_id) return;
+  if (!Number.isInteger(qty) || qty < 1) return toast('Quantité invalide', true);
+  const line = cart.find((l) => l.item_id === item_id);
+  const newQty = (line?.qty || 0) + qty;
+  if (from && newQty > qtyAt(item_id, from)) return toast(`Seulement ${qtyAt(item_id, from)} disponible(s) à « ${locName(from)} »`, true);
+  if (line) line.qty = newQty; else cart.push({ item_id, qty });
+  $('#mvQty').value = 1;
+  renderMoveForm();
+  $('#mvItem').focus();
+}
+
+async function loadHistory() {
+  const m = await api('/api/movements');
+  // Type de déplacement selon la nature de la source et de la destination
+  const kind = (x) => {
+    const f = x.from_kind, t = x.to_kind; // 'stock' | 'salle' | null (= Extérieur)
+    if (!x.from_name) return ['Entrée', 'in'];
+    if (!x.to_name) return /^Retiré/.test(x.note || '') ? ['Retrait', 'out'] : ['Sortie', 'out'];
+    if (f === 'stock' && t === 'salle') return ['Montage', 'mount'];
+    if (f === 'salle' && t === 'stock') return ['Démontage', 'unmount'];
+    if (f === 'salle' && t === 'salle') return ['Changement de salle', 'swap'];
+    if (f === 'stock' && t === 'stock') return ['Transfert entre stocks', 'stk'];
+    return ['Déplacement', 'stk'];
+  };
+  $('#histList').innerHTML = m.map((x) => {
+    const [label, cls] = kind(x);
+    const n = x.lines.length;
+    return `<details class="hist"><summary>` +
+      `<span class="hdate">${esc(x.ts)}</span>` +
+      `<span class="hroute"><b title="${esc(x.from_name || 'Extérieur')}">${esc(x.from_name || 'Extérieur')}</b><span class="arr">→</span><b title="${esc(x.to_name || 'Extérieur')}">${esc(x.to_name || 'Extérieur')}</b></span>` +
+      `<span class="tag2 ${cls}">${label}</span>` +
+      `<span class="hcount">${n} référence${n > 1 ? 's' : ''} · ${x.total_qty} pièce${x.total_qty > 1 ? 's' : ''}</span>` +
+      (x.note ? `<span class="hnote">${esc(x.note)}</span>` : '') +
+      `</summary><table><thead><tr><th>Matériel</th><th>Catégorie</th><th style="text-align:right">Quantité</th></tr></thead><tbody>` +
+      x.lines.map((l) => `<tr><td><b>${esc(l.item)}</b></td><td class="muted">${esc(l.category)}</td><td style="text-align:right"><b>${l.qty}</b></td></tr>`).join('') +
+      `</tbody></table></details>`;
+  }).join('') || '<div class="card muted">Aucun mouvement pour l\'instant</div>';
+}
+
+// Navigation
+$('#nav').addEventListener('click', (e) => {
+  const t = e.target.dataset.tab; if (!t) return;
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b === e.target));
+  document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('hidden', s.id !== 'tab-' + t));
+  if (t === 'historique') loadHistory();
+  if (t === 'admin') loadRetired();
+  if (t === 'planning') loadPlanning();
+  document.body.classList.toggle('plwide', t === 'planning');
+});
+['q','catFilter'].forEach((id) => $('#'+id).addEventListener('input', render));
+['mvFrom','mvTo'].forEach((id) => $('#'+id).addEventListener('change', renderMoveForm));
+$('#mvAdd').onclick = addToCart;
+$('#mvQty').addEventListener('keydown', (e) => { if (e.key === 'Enter') addToCart(); });
+$('#mvClear').onclick = () => { cart.length = 0; renderMoveForm(); };
+$('#mvCartBody').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cartrm]'); if (!b) return;
+  const i = cart.findIndex((l) => l.item_id === Number(b.dataset.cartrm));
+  if (i >= 0) cart.splice(i, 1);
+  renderMoveForm();
+});
+$('#mvCartBody').addEventListener('change', (e) => {
+  const id = e.target.dataset.cartqty; if (!id) return;
+  const line = cart.find((l) => l.item_id === Number(id));
+  const q = Number(e.target.value);
+  if (line && Number.isInteger(q) && q >= 1) line.qty = q;
+  renderMoveForm();
+});
+
+async function act(fn, ok) {
+  try { await fn(); toast(ok); await load(); } catch (e) { toast(e.message, true); }
+}
+
+$('#mvGo').onclick = async () => {
+  if (!cart.length) return;
+  const n = cart.length;
+  if (!mvTo() && !confirm(`La destination est « Extérieur » : ${n > 1 ? `ces ${n} références sortiront` : 'cette référence sortira'} de l'inventaire.\n\nContinuer ?`)) return;
+  try {
+    await api('/api/move-batch', { from: mvFrom(), to: mvTo(), note: $('#mvNote').value, lines: cart });
+    cart.length = 0; $('#mvNote').value = '';
+    toast(`Déplacement enregistré ✔ (${n} référence${n > 1 ? 's' : ''})`);
+    await load();
+  } catch (e) { toast(e.message, true); }
+};
+
+// ---- Catégories : menu des catégories existantes + "Nouvelle catégorie" ----
+function toggleNewCat() {
+  $('#newCatWrap').style.display = $('#newCatSel').value === '__new__' ? '' : 'none';
+}
+$('#newCatSel').addEventListener('change', () => { toggleNewCat(); if ($('#newCatSel').value === '__new__') $('#newCat').focus(); });
+
+const catKey = (s) => {
+  let k = String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (k.length > 3) k = k.replace(/[sx]$/, '');
+  return k;
+};
+// distance d'édition avec inversion de deux lettres (ex : "micors" ~ "micros")
+function editDistance(a, b) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i-1][j] + 1, d[i][j-1] + 1, d[i-1][j-1] + (a[i-1] === b[j-1] ? 0 : 1));
+    if (i > 1 && j > 1 && a[i-1] === b[j-2] && a[i-2] === b[j-1]) d[i][j] = Math.min(d[i][j], d[i-2][j-2] + 1);
+  }
+  return d[a.length][b.length];
+}
+// Catégorie existante qui ressemble à ce qui est tapé (faute de frappe probable), sinon null
+function similarCategory(name) {
+  const k = catKey(name);
+  const max = k.length >= 7 ? 2 : k.length >= 4 ? 1 : 0;
+  if (!max) return null;
+  const cats = [...new Set(D.items.map((i) => i.category))];
+  if (cats.some((c) => catKey(c) === k)) return null; // identique : le serveur le range tout seul
+  return cats.find((c) => editDistance(k, catKey(c)) <= max) || null;
+}
+
+// Lit un menu de catégorie (+ champ "nouvelle catégorie") et renvoie la catégorie à utiliser
+function chooseCategory(selSel, inpSel) {
+  let category = $(selSel).value;
+  if (category === '__new__') {
+    category = $(inpSel).value.trim();
+    if (!category) throw new Error('Indique le nom de la nouvelle catégorie');
+    const sim = similarCategory(category);
+    if (sim && confirm(`« ${category} » ressemble à la catégorie existante « ${sim} ».\n\nOK : ranger dans « ${sim} »\nAnnuler : créer la nouvelle catégorie « ${category} »`)) category = sim;
+  }
+  return category;
+}
+
+// ---- Modifier une fiche du catalogue ----
+let itId = null;
+$('#itCatSel').addEventListener('change', () => {
+  $('#itCatWrap').style.display = $('#itCatSel').value === '__new__' ? '' : 'none';
+  if ($('#itCatSel').value === '__new__') $('#itCat').focus();
+});
+$('#adminItems').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-itedit]'); if (!b) return;
+  itId = Number(b.dataset.itedit);
+  const it = D.items.find((x) => x.id === itId);
+  const cats = [...new Set(D.items.map((i) => i.category))].sort();
+  $('#itName').value = it.name;
+  $('#itCatSel').innerHTML = cats.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('') + '<option value="__new__">+ Nouvelle catégorie…</option>';
+  $('#itCatSel').value = it.category; $('#itCat').value = ''; $('#itCatWrap').style.display = 'none';
+  $('#itLoc').innerHTML = D.locations.filter((l) => l.kind === 'stock').map((l) => `<option value="${l.id}">${esc(l.name)}</option>`).join('');
+  $('#itQty').value = 0;
+  let inStock = 0, inSalle = 0;
+  D.stock.filter((s) => s.item_id === itId).forEach((s) => {
+    if (D.locations.find((l) => l.id === s.location_id)?.kind === 'stock') inStock += s.qty; else inSalle += s.qty;
+  });
+  $('#itInfo').textContent = `Actuellement : ${inStock} en stock · ${inSalle} en salle`;
+  const total = inStock + inSalle;
+  $('#itDel').disabled = total > 0;
+  $('#itDelHint').textContent = total > 0
+    ? 'La fiche ne peut être supprimée que lorsqu\'il ne reste aucune pièce, ni en stock ni en salle.'
+    : 'Il ne reste aucune pièce : tu peux supprimer cette fiche définitivement (si la catégorie n\'a plus aucun matériel, elle disparaît aussi).';
+  $('#itemDlg').showModal();
+});
+$('#itCancel').onclick = () => $('#itemDlg').close();
+$('#itSave').onclick = async () => {
+  try {
+    const category = chooseCategory('#itCatSel', '#itCat');
+    const qty = Number($('#itQty').value) || 0;
+    if (!Number.isInteger(qty) || qty < 0) throw new Error('Quantité invalide');
+    await api('/api/items/update', { id: itId, name: $('#itName').value, category, add: qty > 0 ? { location_id: Number($('#itLoc').value), qty } : null });
+    $('#itemDlg').close(); toast('Modifications enregistrées ✔'); await load();
+  } catch (e) { toast(e.message, true); }
+};
+$('#itDel').onclick = async () => {
+  const it = D.items.find((x) => x.id === itId);
+  if (!confirm(`Supprimer définitivement « ${it.name} » de la base ?\n\nSes éventuels mouvements seront aussi effacés de l'historique. Cette action est irréversible.`)) return;
+  try {
+    await api('/api/items/delete', { id: itId });
+    $('#itemDlg').close(); toast('Fiche supprimée'); await load();
+  } catch (e) { toast(e.message, true); }
+};
+
+$('#addItem').onclick = async () => {
+  try {
+    const category = chooseCategory('#newCatSel', '#newCat');
+    const { id, category: used } = await api('/api/items', { name: $('#newName').value, category });
+    const qty = Number($('#newQty').value);
+    if (qty > 0) await api('/api/move', { item_id: id, from: null, to: Number($('#newLoc').value), qty, note: 'Stock initial' });
+    $('#newName').value = ''; $('#newQty').value = 0; $('#newCat').value = '';
+    $('#newCatSel').value = used; // garde la catégorie pour enchaîner plusieurs ajouts
+    toast(`Matériel ajouté ✔ (catégorie : ${used})`);
+    await load();
+    $('#newCatSel').value = used; toggleNewCat();
+  } catch (e) { toast(e.message, true); }
+};
+
+$('#addLoc').onclick = () => act(async () => { await api('/api/locations', { name: $('#locName').value, kind: $('#locKind').value, floor: $('#locFloor').value }); $('#locName').value = ''; }, 'Emplacement ajouté ✔');
+$('#locKind').onchange = () => ($('#locFloorWrap').style.display = $('#locKind').value === 'salle' ? '' : 'none');
+// Listes d'étages (formulaire d'ajout + fenêtre de modification)
+const FLOOR_OPTIONS = [['', 'Aucun (autre espace)'], ['-2', 'Étage -2'], ['-1', 'Étage -1'], ['0', 'Étage 0'], ['1', 'Étage +1'], ['2', 'Étage +2'], ['3', 'Étage +3'], ['4', 'Étage +4']];
+$('#locFloor').innerHTML = $('#editFloor').innerHTML = FLOOR_OPTIONS.map(([v, t]) => `<option value="${v}">${t}</option>`).join('');
+
+// Sections repliables dans "Emplacements existants" (fermées par défaut)
+const adminOpen = {};
+$('#adminLocs').addEventListener('toggle', (e) => { if (e.target.dataset.g) adminOpen[e.target.dataset.g] = e.target.open; }, true);
+
+// Fenêtre "Modifier"
+let editId = null;
+$('#adminLocs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-edit]'); if (btn) openLocEdit(Number(btn.dataset.edit));
+});
+function openLocEdit(id) {
+  editId = id;
+  const l = D.locations.find((x) => x.id === editId);
+  $('#editName').value = l.name;
+  $('#editFloor').value = l.floor === null ? '' : String(l.floor);
+  $('#editFloorWrap').style.display = l.kind === 'salle' ? '' : 'none';
+  $('#editEquipWrap').style.display = l.kind === 'salle' ? '' : 'none';
+  $('#editEquip').value = equipOf(l).map((x) => `${x.qty} × ${x.name}`).join('\n');
+  $('#editEquipSrc').textContent = l.equipment_src === 'manuel' ? 'Saisi à la main : les fiches techniques ne le modifient plus.'
+    : l.equipment_src === 'auto' ? 'Rempli automatiquement depuis les fiches techniques (lignes « Included »). Si tu le modifies, il ne sera plus complété automatiquement.'
+    : 'Pas encore renseigné : il se remplit tout seul avec les fiches techniques, ou tu peux le saisir ici.';
+  $('#editDlg').showModal();
+  $('#editName').focus();
+}
+$('#editCancel').onclick = () => $('#editDlg').close();
+$('#editSave').onclick = async () => {
+  try {
+    const loc = D.locations.find((x) => x.id === editId);
+    await api('/api/locations/update', { id: editId, name: $('#editName').value, floor: $('#editFloor').value, equipment: loc?.kind === 'salle' ? $('#editEquip').value : undefined });
+    $('#editDlg').close(); toast('Modifications enregistrées ✔'); await load();
+  } catch (e) { toast(e.message, true); }
+};
+$('#editDel').onclick = async () => {
+  if (!confirm('Supprimer cet emplacement ?')) return;
+  try {
+    await api('/api/locations/delete', { id: editId });
+    $('#editDlg').close(); toast('Emplacement supprimé'); await load();
+  } catch (e) { toast(e.message, true); }
+};
+
+// ---- Retrait de matériel (depuis un stock uniquement) ----
+const STATUS_LABEL = { retire: 'Retiré', reparation: 'En réparation', hors_service: 'Non utilisable' };
+let retId = null;
+
+async function loadRetired() {
+  const r = await api('/api/retired');
+  $('#retiredBody').innerHTML = r.map((x) => `<tr><td>${esc(x.ts)}</td><td><b>${esc(x.item)}</b> <span class="muted">${esc(x.category)}</span></td><td>${x.qty}</td><td>${esc(x.from_name || '—')}</td><td>${esc(STATUS_LABEL[x.status] || x.status)}</td><td class="muted">${esc(x.note)}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">Aucun matériel retiré pour l\'instant</td></tr>';
+}
+
+function syncRetQty() {
+  const o = $('#retFrom').selectedOptions[0];
+  if (o) $('#retQty').max = o.dataset.max;
+}
+
+$('#adminItems').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-retire]'); if (!b) return;
+  retId = Number(b.dataset.retire);
+  const it = D.items.find((x) => x.id === retId);
+  const where = D.stock.filter((s) => s.item_id === retId).map((s) => ({ qty: s.qty, loc: D.locations.find((l) => l.id === s.location_id) })).filter((x) => x.loc);
+  const stocks = where.filter((x) => x.loc.kind === 'stock');
+  const salles = where.filter((x) => x.loc.kind === 'salle');
+  $('#retName').textContent = `${it.name} (${it.category})`;
+  $('#retInfo').innerHTML = salles.length
+    ? `<b>Actuellement en salle (non retirable) :</b> ${salles.map((x) => `${esc(x.loc.name)} × ${x.qty}`).join(', ')}.<br>Pour le retirer, ramène-le d'abord en stock avec l'onglet Déplacer.`
+    : '';
+  $('#retFrom').innerHTML = stocks.map((x) => `<option value="${x.loc.id}" data-max="${x.qty}">${esc(x.loc.name)} (${x.qty} en stock)</option>`).join('');
+  const can = stocks.length > 0;
+  $('#retForm').style.display = can ? 'flex' : 'none';
+  $('#retNone').style.display = can ? 'none' : '';
+  $('#retGo').disabled = !can;
+  $('#retQty').value = 1; $('#retNote').value = '';
+  syncRetQty();
+  $('#retireDlg').showModal();
+});
+$('#retFrom').addEventListener('change', syncRetQty);
+$('#retCancel').onclick = () => $('#retireDlg').close();
+$('#retGo').onclick = async () => {
+  const loc = Number($('#retFrom').value), qty = Number($('#retQty').value);
+  const max = Number($('#retFrom').selectedOptions[0]?.dataset.max || 0);
+  if (!Number.isInteger(qty) || qty < 1) return toast('Quantité invalide', true);
+  if (qty > max) return toast(`Seulement ${max} en stock à cet endroit`, true);
+  const it = D.items.find((x) => x.id === retId);
+  if (!confirm(`Retirer ${qty} × ${it.name} de « ${locName(loc)} » ?\n\nIl sera conservé dans la liste « Matériel retiré ».`)) return;
+  try {
+    await api('/api/retire', { item_id: retId, location_id: loc, qty, note: $('#retNote').value });
+    $('#retireDlg').close(); toast('Matériel retiré ✔'); await load(); await loadRetired();
+  } catch (e) { toast(e.message, true); }
+};
+
+// ---- Onglet "Planning BEO" : planning géré directement dans l'application ----
+let _v = 'grid', _dn = 'compact'; try { _v = localStorage.getItem('plView') || 'grid'; _dn = localStorage.getItem('plDensity') || 'compact'; } catch {}
+const PL = { events: [], offers: [], offerMoves: [], itemMap: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+const PL_COLOR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
+const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
+const AREA_ORDER = ['Oasis (étage -1)', 'Rez-de-chaussée', 'Étage +1', 'Autres espaces'];
+const areaOf = (l) => (l.floor === -1 ? AREA_ORDER[0] : l.floor === 0 ? AREA_ORDER[1] : l.floor === 1 ? AREA_ORDER[2] : AREA_ORDER[3]);
+const salles = () => D.locations.filter((l) => l.kind === 'salle').sort((a, b) => a.id - b.id);
+const pad2 = (n) => String(n).padStart(2, '0');
+const isoOf = (dt) => `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+const isoToday = () => isoOf(new Date());
+const toDate = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (iso, n) => { const d = toDate(iso); d.setDate(d.getDate() + n); return isoOf(d); };
+const weekStart = (iso) => addDays(iso, -((toDate(iso).getDay() - 5 + 7) % 7)); // la semaine commence le vendredi
+const weekDays = (start) => Array.from({ length: 10 }, (_, i) => addDays(start, i)); // du vendredi au dimanche suivant
+const dayLabel = (iso, long) => {
+  const dt = toDate(iso);
+  const w = dt.toLocaleDateString('fr-BE', { weekday: long ? 'long' : 'short' }).replace('.', '');
+  return `${w} ${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}`;
+};
+const roomStuff = (id) => D.stock.filter((s) => s.location_id === id).map((s) => `${D.items.find((i) => i.id === s.item_id)?.name || '?'} ×${s.qty}`);
+// « Démontage » contient « montage » : on le teste en premier (orange, comme dans l'historique)
+const tagClass = (t) => (/démont|récup/i.test(t) ? 'demontage' : /montage/i.test(t) ? 'setup' : /show|répét/i.test(t) ? 'show' : '');
+
+async function loadPlanning(quiet) {
+  try {
+    const before = PL.status.version;
+    const r = await api('/api/planning');
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status; PL.loaded = true;
+    renderPlanning();
+    renderLieux(); // matériel externe installé (onglet Salles)
+    if (quiet && before !== undefined && r.status.version > before) toast('Planning mis à jour par un autre poste ✔');
+  } catch (e) { toast(e.message, true); }
+}
+
+function planningSourceHtml() {
+  return `<span class="muted" style="flex:1">Planning géré dans l'application.</span>
+    <button class="btn" id="plPdf">📄 Importer le BEO Book (PDF)…</button>
+    <button class="btn" id="plOffer" style="background:#0f766e;border-color:#0f766e">📎 Fiches techniques (offres)${PL.offers.length ? ` · ${PL.offers.length}` : ''}…</button>`;
+}
+
+function evCard(e) {
+  const stuff = e.room_ids.flatMap((id) => { const l = roomStuff(id); return l.length ? [`${locName(id)} : ${l.join(', ')}`] : []; });
+  const inst = e.room_ids.length
+    ? (stuff.length ? `Dans la salle : ${stuff.map(esc).join(' — ')}` : '<i>Aucun matériel enregistré dans la salle</i>')
+    : '<i>Aucune salle reconnue : clique pour choisir la salle</i>';
+  const time = e.start ? `<div class="evtime">${esc(e.start)}<span>${esc(e.end || '')}</span></div>` : '<div class="evtime none">horaire<br>non précisé</div>';
+  const tags = e.tags.map((t) => tagChip(t, e)).join('')
+    + (e.urgent ? '<span class="tg urgent">⚠ Important</span>' : '')
+    + (e.end_date !== e.date ? `<span class="tg">jusqu'au ${dayLabel(e.end_date)}</span>` : '');
+  const rooms = e.room_ids.length ? e.room_ids.map((id) => locName(id)) : e.rooms;
+  return `<div class="ev ${e.color || ''} ${isSplit(e) ? 'split' : ''}" data-edit="${e.id}" title="${esc(beoInfoLines(e).join('\n'))}">${time}
+    <div class="evmain"><div><b class="evclient">${esc(e.client)}</b>${rooms.map((r) => `<span class="rm">${esc(r)}</span>`).join('')}${tags}</div>
+      ${e.detail ? `<div class="evdetail">${esc(e.detail)}</div>` : ''}${inst ? `<div class="evinst">${inst}</div>` : ''}</div>
+    ${e.color ? `<span class="evstatus ${e.color}">${PL_COLOR[e.color]}</span>` : ''}</div>`;
+}
+
+function dayBlock(evs) {
+  const list = evs.slice().sort((x, y) => (x.start || '99:99').localeCompare(y.start || '99:99') || (x.client || '').localeCompare(y.client || ''));
+  return list.map(evCard).join('');
+}
+
+// Infos du BEO (PDF) affichées au survol : nom de l'événement, signalétique, mise en place, nombre de personnes (👤)
+function beoInfoLines(e) {
+  const i = e.info; if (!i) return [];
+  const lines = [];
+  if (i.account || i.event) lines.push(['Compte : ' + (i.account || ''), i.event ? 'Événement : ' + i.event : ''].filter((x) => x.trim() !== 'Compte :').join(' — '));
+  for (const r of i.rows || []) {
+    lines.push(`${r.start}–${r.end}  ${[r.name, r.sign, r.setup].filter(Boolean).join(' · ')}${r.pax !== '' && r.pax != null ? '  👤 ' + r.pax : ''}`);
+  }
+  return lines;
+}
+
+// Phases d'une case (montage / démontage) : une phase validée « Prêt » est cochée ✓ ;
+// tant qu'il en reste une à faire, la case est moitié verte (fait) / moitié rouge (à faire)
+const PHASES = ['Montage', 'Démontage'];
+const pendingPhases = (e, tags = e.tags) => tags.filter((t) => PHASES.includes(t) && !(e.done || []).includes(t));
+const isSplit = (e) => e.color === 'red' && (e.done || []).length > 0 && pendingPhases(e).length > 0;
+const tagChip = (t, e) => (e.done || []).includes(t) ? `<span class="tg ok" title="${esc(t)} validé (Prêt)">${esc(t)} ✓</span>` : `<span class="tg ${tagClass(t)}">${esc(t)}</span>`;
+
+function gridCell(e, hit, extra = '') {
+  const stuff = e.room_ids.flatMap((id) => roomStuff(id));
+  const tip = [e.client, e.detail, ...beoInfoLines(e), stuff.length ? 'Dans la salle : ' + stuff.join(', ') : ''].filter(Boolean).join('\n');
+  const time = e.start ? `<div class="t">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</div>` : '';
+  const tags = e.tags.map((t) => tagChip(t, e)).join(' ');
+  return `<div class="pc ${e.color || ''} ${isSplit(e) ? 'split' : ''} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
+}
+
+// ---- Offres (fiches techniques) : affichées dans la salle, au jour du montage
+function offerParts(items) {
+  const ext = {};
+  items.filter((i) => i.kind === 'externe').forEach((i) => { ext[i.supplier] = (ext[i.supplier] || 0) + 1; });
+  return { dolce: items.filter((i) => i.kind === 'dolce'), ext, inc: items.filter((i) => i.kind === 'inclus').length };
+}
+function offerTip(o, r) {
+  const p = offerParts(r.items || []);
+  return [
+    `Offre — ${o.client}${o.title || o.version ? ` (${[o.title, o.version].filter(Boolean).join(' ')})` : ''}`,
+    `Salle : ${r.name ? r.name + ' → ' : ''}${r.room_ids.map(locName).join(', ')}`,
+    `Montage : ${dayLabel(r.setup)}${r.show_from ? ` · Show : ${r.show_raw || dayLabel(r.show_from)}` : ''}${r.demontage ? ` · Démontage : ${dayLabel(r.demontage)}` : ''}`,
+    p.dolce.length ? 'À monter par nous (Dolce) :\n' + p.dolce.map((i) => `   ${i.qty} × ${i.name}`).join('\n') : '',
+    Object.keys(p.ext).length ? 'Externe : ' + Object.entries(p.ext).map(([s, n]) => `${s} (${n})`).join(', ') : '',
+    p.inc ? `Inclus : ${p.inc} élément${p.inc > 1 ? 's' : ''}` : '',
+    'Clique pour ouvrir le PDF',
+  ].filter(Boolean).join('\n');
+}
+const offerChip = (o, r) =>
+  `<a class="ofr" href="/api/offers/${o.id}/pdf#page=${r.page || 1}" target="_blank" rel="noopener" title="${esc(offerTip(o, r))}">📄 Offre</a>`;
+// Même société ? (même règle que le serveur) « EU Aluminium » ≈ « (CVENT) European Aluminium »
+const CLIENT_STOP = new Set(['the', 'and', 'des', 'les', 'group', 'groupe', 'meeting', 'meetings', 'event', 'events', 'international', 'europe', 'european', 'belgium', 'belgique', 'company', 'sprl', 'srl', 'asbl']);
+const clientWords = (s) => norm(String(s || '').replace(/\([^)]*\)/g, ' ')).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CLIENT_STOP.has(w));
+function sameClient(a, b) {
+  const k = (s) => norm(s).replace(/[^a-z0-9]/g, '');
+  if (k(a) && k(a) === k(b)) return true;
+  const wb = new Set(clientWords(b));
+  return clientWords(a).some((w) => wb.has(w));
+}
+// jours concernés par une salle de l'offre : { date: ['Montage', 'Show', 'Démontage'] }
+function offerPhases(r) {
+  const out = {};
+  const add = (d, t) => { if (d) (out[d] ||= []).includes(t) || out[d].push(t); };
+  add(r.setup, 'Montage');
+  if (r.show_from) for (let d = r.show_from; d <= (r.show_to || r.show_from); d = addDays(d, 1)) add(d, 'Show');
+  add(r.demontage, 'Démontage');
+  return out;
+}
+// { 'date|salle' : [{ o, r }] } pour les jours de montage, show et démontage affichés
+function offersByCell(days) {
+  const m = new Map();
+  for (const o of PL.offers) for (const r of o.rooms) for (const d of Object.keys(offerPhases(r))) {
+    if (!days.includes(d)) continue;
+    for (const id of r.room_ids) { const k = `${d}|${id}`; if (!m.has(k)) m.set(k, []); m.get(k).push({ o, r }); }
+  }
+  return m;
+}
+
+function renderGrid(days, weekEvs, hit, today) {
+  const withRooms = salles();
+  const areas = AREA_ORDER.filter((a) => withRooms.some((l) => areaOf(l) === a));
+  if (!areas.includes(PL.gridArea)) PL.gridArea = areas.includes(AREA_ORDER[1]) ? AREA_ORDER[1] : areas[0];
+  $('#plAreas').innerHTML = areas.map((a) => `<button data-a="${esc(a)}" class="${a === PL.gridArea ? 'active' : ''}">${esc(a)}</button>`).join('');
+  const cols = withRooms.filter((l) => areaOf(l) === PL.gridArea);
+  if (!cols.length) { $('#plBody').innerHTML = '<div class="card muted">Aucune salle : ajoute-en dans « Gestion ».</div>'; return; }
+  const R = days.length, C = cols.length;
+  const colOf = new Map(cols.map((l, i) => [l.id, i]));
+  const slot = Array.from({ length: R }, () => Array(C).fill(null)); // null = libre, 'x' = couvert, tableau = événements
+  const lost = weekEvs.filter((e) => !e.room_ids.length);
+  // Placement : d'abord les événements sur une seule salle (Coco 1, Coco 2… séparées), puis les grandes salles réunies.
+  // Si une grande salle (Coco 1+2+3) tombe sur des parties déjà occupées, elle est répartie dans chaque partie
+  // au lieu de fusionner les cases. Dans une case, les événements sont rangés par heure (sans heure = à la fin).
+  const tkey = (e) => e.start || '99:99';
+  const width = (e) => e.room_ids.filter((id) => colOf.has(id)).length;
+  const sorted = weekEvs.filter((e) => e.room_ids.some((id) => colOf.has(id))).sort((a, b) => width(a) - width(b) || tkey(a).localeCompare(tkey(b)));
+  for (const e of sorted) {
+    const r0 = days.indexOf(e.date < days[0] ? days[0] : e.date), r1 = days.indexOf(e.end_date > days[R - 1] ? days[R - 1] : e.end_date);
+    const cs = [...new Set(e.room_ids.filter((id) => colOf.has(id)).map((id) => colOf.get(id)))].sort((a, b) => a - b);
+    const runs = []; cs.forEach((c) => { const l = runs[runs.length - 1]; if (l && c === l[l.length - 1] + 1) l.push(c); else runs.push([c]); });
+    for (const run of runs) {
+      const c0 = run[0], c1 = run[run.length - 1];
+      let free = true;
+      for (let r = r0; r <= r1 && free; r++) for (let c = c0; c <= c1; c++) if (slot[r][c] !== null) free = false;
+      if (free) {
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) slot[r][c] = 'x';
+        slot[r0][c0] = { rs: r1 - r0 + 1, cs: c1 - c0 + 1, list: [e] };
+        continue;
+      }
+      for (let c = c0; c <= c1; c++) {
+        const s = slot[r0][c];
+        if (s === null) slot[r0][c] = { rs: 1, cs: 1, list: [e] };
+        else if (s !== 'x') s.list.push(e);
+        else if (!lost.includes(e)) lost.push(e);
+      }
+    }
+  }
+  const head = `<tr><th class="day"></th>${cols.map((c) => `<th>${esc(c.name)}</th>`).join('')}</tr>`;
+  const ofc = offersByCell(days);
+  // étiquettes « Offre » de toutes les cases couvertes (une offre sur plusieurs salles n'apparaît qu'une fois par case)
+  const chipsFor = (r0, rs, c0, cs) => {
+    const seen = new Set(), out = [];
+    for (let r = r0; r < r0 + rs; r++) for (let c = c0; c < c0 + cs; c++) for (const x of ofc.get(`${days[r]}|${cols[c].id}`) || []) {
+      const k = `${x.o.id}|${x.r.name}`; if (seen.has(k)) continue; seen.add(k);
+      out.push({ o: x.o, r: x.r }); // copie : marquée « done » dans cette case seulement
+    }
+    return out;
+  };
+  const chipHtml = (list) => list.length ? `<div class="ofrs">${list.map((x) => offerChip(x.o, x.r)).join('')}</div>` : '';
+  const rows = days.map((d, r) => {
+    const tds = [];
+    for (let c = 0; c < C; c++) {
+      const v = slot[r][c];
+      if (v === 'x') continue;
+      if (!v) {
+        const ch = chipsFor(r, 1, c, 1).map((x) => offerChip(x.o, x.r)).join('');
+        tds.push(`<td class="empty${ch ? ' hasofr' : ''}" data-new="1" data-d="${d}" data-r="${cols[c].id}">${ch}</td>`); continue;
+      }
+      // l'étiquette « Offre » va dans l'événement de la même société (sinon dans le dernier de la case)
+      const list = v.list.slice().sort((a, b) => tkey(a).localeCompare(tkey(b)));
+      const ch = chipsFor(r, v.rs, c, v.cs);
+      const per = list.map((e) => ch.filter((it) => !it.done && sameClient(e.client, it.o.client) && (it.done = true)));
+      ch.filter((it) => !it.done).forEach((it) => per[per.length - 1].push(it));
+      // la case prend la couleur de son (dernier) événement : pleine même quand la ligne s'agrandit
+      const last = list[list.length - 1];
+      const fill = hit(last) ? ` class="fill fill-${isSplit(last) ? 'split' : last.color || 'none'}"` : '';
+      tds.push(`<td rowspan="${v.rs}" colspan="${v.cs}"${fill}>${list.map((e, i) => gridCell(e, hit, chipHtml(per[i]))).join('')}</td>`);
+    }
+    return `<tr class="${d === today ? 'today' : ''}"><th class="day">${dayLabel(d)}</th>${tds.join('')}</tr>`;
+  }).join('');
+  // largeur minimale par salle : en dessous, la grille défile plutôt que d'écraser les cases
+  const compact = PL.density === 'compact';
+  const minW = (compact ? 70 : 86) + C * (compact ? 88 : 128);
+  $('#plBody').innerHTML = `<div class="gridwrap${compact ? ' compact' : ''}"><table class="pg" style="min-width:${minW}px"><thead>${head}</thead><tbody>${rows}</tbody></table></div>` +
+    (lost.length ? `<h3 style="margin:14px 0 6px;font-size:14px">Événements à placer ou en conflit dans la grille</h3>${dayBlock(lost)}` : '');
+}
+
+function renderPlanning() {
+  $('#plSource').innerHTML = planningSourceHtml();
+  const today = isoToday();
+  if (!PL.week) PL.week = weekStart(today);
+  const days = weekDays(PL.week);
+  $('#plWeekLbl').textContent = `${dayLabel(days[0])} → ${dayLabel(days[9])}`;
+  $('#plWeekInfo').textContent = `Semaine du ${dayLabel(days[0])} au ${dayLabel(days[9])}`;
+  const q = norm($('#plQ').value);
+  const hit = (e) => !q || norm([e.client, e.detail, e.rooms.join(' '), e.room_ids.map(locName).join(' '), e.tags.join(' ')].join(' ')).includes(q);
+  const on = (e, d) => e.date <= d && d <= e.end_date;
+  const weekEvs = PL.events.filter((e) => e.date <= days[9] && e.end_date >= days[0]);
+  $('#plView').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.v === PL.view));
+  $('#plAreas').style.display = PL.view === 'grid' ? '' : 'none';
+  $('#plDensity').style.display = PL.view === 'grid' ? '' : 'none';
+  $('#plDensity').querySelectorAll('button').forEach((b) => b.classList.toggle('active', b.dataset.d === PL.density));
+  $('#plDays').style.display = PL.view === 'grid' ? 'none' : '';
+  if (PL.view === 'grid') { renderGrid(days, weekEvs, hit, today); return; }
+
+  if (!PL.day || !days.includes(PL.day)) PL.day = days.includes(today) ? today : days[0];
+  $('#plDays').innerHTML = days.map((d) => {
+    const n = weekEvs.filter((e) => on(e, d) && hit(e)).length;
+    const [w, dm] = dayLabel(d).split(' ');
+    return `<button class="daychip ${d === PL.day && !q ? 'active' : ''} ${d === today ? 'today' : ''} ${n ? '' : 'zero'}" data-day="${d}">${w} ${dm}<small>${n} événement${n > 1 ? 's' : ''}</small></button>`;
+  }).join('');
+  if (q) {
+    const blocks = days.map((d) => ({ d, list: weekEvs.filter((e) => on(e, d) && hit(e)) })).filter((x) => x.list.length);
+    $('#plBody').innerHTML = blocks.length
+      ? blocks.map((b) => `<h2 class="plday">${dayLabel(b.d, true)}</h2>${dayBlock(b.list)}`).join('')
+      : '<div class="card muted">Aucun événement ne correspond à cette recherche cette semaine.</div>';
+    return;
+  }
+  const list = weekEvs.filter((e) => on(e, PL.day));
+  const ofs = PL.offers.flatMap((o) => o.rooms.filter((r) => r.room_ids.length && offerPhases(r)[PL.day]).map((r) => ({ o, r, ph: offerPhases(r)[PL.day] })));
+  const ofHtml = ofs.length ? `<div class="ofrday"><b>Fiches techniques ce jour-là</b>${ofs.map(({ o, r, ph }) => {
+    const p = offerParts(r.items || []);
+    return `<div>${offerChip(o, r)} ${ph.map((t) => `<span class="tg ${tagClass(t)}">${t}</span>`).join('')} <b>${esc(o.client)}</b> · ${r.room_ids.map(locName).map(esc).join(', ')}${r.show_from ? ` <span class="muted">(show ${esc(r.show_raw || dayLabel(r.show_from))})</span>` : ''}${p.dolce.length && ph.includes('Montage') ? ` — <span class="pill dolce">Dolce</span> ${p.dolce.map((i) => `${i.qty} × ${esc(i.name)}`).join(', ')}` : ''}</div>`;
+  }).join('')}</div>` : '';
+  $('#plBody').innerHTML = `<h2 class="plday">${dayLabel(PL.day, true)}</h2>` + ofHtml +
+    (list.length ? dayBlock(list) : '<div class="card muted">Aucun événement prévu ce jour-là.</div>');
+}
+
+$('#plDays').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-day]'); if (!b) return;
+  $('#plQ').value = ''; PL.day = b.dataset.day; renderPlanning();
+});
+$('#plQ').addEventListener('input', renderPlanning);
+$('#plView').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-v]'); if (!b) return;
+  PL.view = b.dataset.v; try { localStorage.setItem('plView', PL.view); } catch {}
+  renderPlanning();
+});
+$('#plAreas').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  PL.gridArea = b.dataset.a; renderPlanning();
+});
+$('#plPrev').onclick = () => { PL.week = addDays(PL.week, -7); PL.day = null; renderPlanning(); };
+$('#plNext').onclick = () => { PL.week = addDays(PL.week, 7); PL.day = null; renderPlanning(); };
+$('#plDensity').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-d]'); if (!b) return;
+  PL.density = b.dataset.d; try { localStorage.setItem('plDensity', PL.density); } catch {}
+  renderPlanning();
+});
+// Plein écran : la grille occupe tout l'écran (Échap ou le même bouton pour sortir)
+function setFull(on) {
+  document.body.classList.toggle('plfull', on);
+  $('#plFull').textContent = on ? '✕ Quitter le plein écran' : '⛶ Plein écran';
+  try {
+    if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {});
+    if (!on && document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  } catch {}
+}
+$('#plFull').onclick = () => setFull(!document.body.classList.contains('plfull'));
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('plfull')) setFull(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('plfull') && !document.querySelector('dialog[open]')) setFull(false); });
+$('#plPrev2').onclick = () => $('#plPrev').click();
+$('#plNext2').onclick = () => $('#plNext').click();
+$('#plToday').onclick = () => { PL.week = weekStart(isoToday()); PL.day = isoToday(); $('#plQ').value = ''; renderPlanning(); };
+
+// ----- Fenêtre d'édition d'un événement
+const EV = { id: null, confirmDel: false };
+$('#evTags').innerHTML = PL_TAGS.map((t) => `<label><input type="checkbox" value="${t}">${t}</label>`).join('');
+
+function openEvent(ev, pre) {
+  EV.id = ev?.id || null; EV.confirmDel = false;
+  const day = ev?.date || pre?.date || (PL.week && weekDays(PL.week).includes(isoToday()) ? isoToday() : PL.week) || isoToday();
+  $('#evTitle').textContent = ev ? 'Modifier l\'événement' : 'Nouvel événement';
+  $('#evClient').value = ev?.client || '';
+  $('#evStart').value = ev?.start || ''; $('#evEnd').value = ev?.end || '';
+  $('#evDate').value = day; $('#evEndDate').value = ev?.end_date || day;
+  $('#evDetail').value = ev?.detail || '';
+  const col = ev ? (ev.color || '') : 'red';
+  document.querySelectorAll('#evColors input').forEach((r) => { r.checked = r.value === col; });
+  document.querySelectorAll('#evTags input').forEach((c) => { c.checked = !!ev && ev.tags.includes(c.value); });
+  $('#evUrgent').checked = !!ev?.urgent;
+  const sel = new Set(ev ? ev.room_ids : pre?.room ? [pre.room] : []);
+  $('#evRooms').innerHTML = AREA_ORDER.map((a) => {
+    const ls = salles().filter((l) => areaOf(l) === a);
+    return ls.length ? `<div class="fl">${esc(a)}</div>` + ls.map((l) => `<label><input type="checkbox" value="${l.id}" ${sel.has(l.id) ? 'checked' : ''}>${esc(l.name)}</label>`).join('') : '';
+  }).join('');
+  $('#evRoomsHint').textContent = ev && !ev.room_ids.length && ev.rooms.length ? `(nom d'origine : ${ev.rooms.join(', ')})` : '';
+  // phases déjà validées (« Prêt ») : possibilité d'annuler et de remettre le matériel à sa place
+  const dn = ev?.done || [];
+  $('#evDone').style.display = dn.length ? '' : 'none';
+  $('#evDone').innerHTML = dn.length ? `Validé : ${dn.map((p) => `<span class="tg ok">${esc(p)} ✓</span>`).join('')}
+    <button type="button" class="btn ghost small" id="evUndo" style="margin-left:8px">↩ Annuler une validation…</button>` : '';
+  $('#evDel').style.display = ev ? '' : 'none'; $('#evDel').textContent = 'Supprimer';
+  $('#evErr').textContent = '';
+  $('#evDlg').showModal();
+  if (!ev) $('#evClient').focus();
+}
+$('#plBody').addEventListener('click', (e) => {
+  if (e.target.closest('a.ofr')) return; // ouvre le PDF de l'offre (lien)
+  const c = e.target.closest('[data-edit]');
+  if (c) return openEvent(PL.events.find((x) => x.id === Number(c.dataset.edit)));
+  const n = e.target.closest('[data-new]');
+  if (n) openEvent(null, { date: n.dataset.d, room: Number(n.dataset.r) });
+});
+$('#plNew').onclick = () => openEvent(null, {});
+$('#evDate').addEventListener('change', () => { if ($('#evEndDate').value < $('#evDate').value) $('#evEndDate').value = $('#evDate').value; });
+$('#evCancel').onclick = () => $('#evDlg').close();
+const evPayload = () => ({
+  id: EV.id, client: $('#evClient').value, start: $('#evStart').value, end: $('#evEnd').value,
+  date: $('#evDate').value, end_date: $('#evEndDate').value, detail: $('#evDetail').value,
+  color: document.querySelector('#evColors input:checked')?.value || '',
+  tags: [...document.querySelectorAll('#evTags input:checked')].map((c) => c.value),
+  urgent: $('#evUrgent').checked,
+  room_ids: [...document.querySelectorAll('#evRooms input:checked')].map((c) => Number(c.value)),
+});
+$('#evSave').onclick = async () => {
+  $('#evErr').textContent = '';
+  const body = evPayload();
+  // « Prêt » sur une case avec une offre et un montage / démontage pas encore validé → 2e étape : le matériel
+  const ev = EV.id ? PL.events.find((x) => x.id === EV.id) : null;
+  // case validée repassée en rouge (ou autre) : proposer d'annuler la validation et de remettre le matériel
+  if (ev && ev.color === 'green' && body.color !== 'green' && (ev.done || []).length) return openUndo(ev, body);
+  if (ev && body.color === 'green') {
+    const todo = PHASES.filter((p) => pendingPhases(ev, body.tags).includes(p));
+    const ofs = offersForEvent({ ...ev, ...body });
+    if (todo.length && ofs.length) return openPhase(ev, body, todo, ofs);
+  }
+  try {
+    const r = await api('/api/planning/event', body);
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    $('#evDlg').close(); renderPlanning(); toast('Planning enregistré ✔');
+  } catch (err) { $('#evErr').textContent = err.message; }
+};
+$('#evDel').onclick = async () => {
+  if (!EV.confirmDel) { EV.confirmDel = true; $('#evDel').textContent = 'Confirmer la suppression'; return; }
+  try {
+    const r = await api('/api/planning/event/delete', { id: EV.id });
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    $('#evDlg').close(); renderPlanning(); toast('Événement supprimé');
+  } catch (err) { $('#evErr').textContent = err.message; }
+};
+
+
+// ----- « Prêt » sur une case avec offre : 2e étape = résumé et déplacement du matériel Dolce
+// Montage : stock → salle (matériel « Dolce » de la fiche). Démontage : salle → stock (ce qui a été monté).
+const PH = { ev: null, body: null, todo: [], ofs: [], phase: null, rows: [] };
+const offersForEvent = (e) => PL.offers.flatMap((o) => o.rooms
+  .filter((r) => r.room_ids.some((id) => e.room_ids.includes(id)) && sameClient(e.client, o.client)
+    && Object.keys(offerPhases(r)).some((d) => e.date <= d && d <= (e.end_date || e.date)))
+  .map((r) => ({ o, r })));
+const stocks = () => D.locations.filter((l) => l.kind === 'stock');
+const itemKey = (s) => norm(s).replace(/[^a-z0-9]/g, '');
+// matériel de la fiche → fiche du catalogue : choix déjà fait une fois, sinon mots en commun
+function matchItem(name) {
+  const saved = PL.itemMap?.[itemKey(name)];
+  if (saved && D.items.some((i) => i.id === saved)) return saved;
+  const words = (s) => norm(s).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !['additional', 'with', 'for', 'the', 'and'].includes(w));
+  const exact = D.items.find((i) => itemKey(i.name) === itemKey(name));
+  if (exact) return exact.id;
+  // le plus de mots en commun ; à égalité, le nom le plus proche (« Lectern » → Lectern plutôt que Lectern microphone)
+  const mine = words(name);
+  let best = null, score = 0;
+  for (const it of D.items) {
+    const w = words(it.name), n = w.filter((x) => mine.includes(x)).length;
+    const s = n ? n - 0.01 * (w.length - n) : 0;
+    if (s > score) { best = it.id; score = s; }
+  }
+  return best;
+}
+const bestStock = (item, qty) => {
+  const st = stocks();
+  if (!item) return st[0]?.id;
+  return (st.find((s) => qtyAt(item, s.id) >= qty) || st.slice().sort((a, b) => qtyAt(item, b.id) - qtyAt(item, a.id))[0])?.id;
+};
+
+// Matériel de sociétés externes (CAS…) : pas déplacé, mais noté comme installé / désinstallé dans la salle
+const lastOfferMove = (offerId, roomName) => PL.offerMoves.filter((m) => (m.external || []).some((x) => x.offer_id === offerId && x.room_name === roomName)).slice(-1)[0];
+function buildExtRows() {
+  const ext = [];
+  for (const { o, r } of PH.ofs) {
+    const rooms = r.room_ids.filter((id) => PH.body.room_ids.includes(id));
+    const room_ids = rooms.length ? rooms : r.room_ids;
+    const base = { offer_id: o.id, room_name: r.name, room_ids, group: `${o.client} — ${r.name || room_ids.map(locName).join(' + ')}`, on: true };
+    const rec = PH.phase === 'Démontage' && lastOfferMove(o.id, r.name);
+    const list = rec && rec.phase === 'Montage'
+      ? rec.external.filter((x) => x.offer_id === o.id && x.room_name === r.name) // ce qui a été noté comme installé au montage
+      : (r.items || []).filter((i) => i.kind === 'externe');
+    for (const x of list) ext.push({ ...base, qty: x.qty, name: x.name, supplier: x.supplier });
+  }
+  PH.ext = ext;
+}
+
+function buildPhaseRows() {
+  buildExtRows();
+  const ev = PH.ev, rows = [];
+  for (const { o, r } of PH.ofs) {
+    const rooms = r.room_ids.filter((id) => PH.body.room_ids.includes(id));
+    const roomIds = rooms.length ? rooms : r.room_ids;
+    const base = { offer_id: o.id, room_name: r.name, group: `${o.client} — ${r.name || roomIds.map(locName).join(' + ')}`, on: true };
+    if (PH.phase === 'Montage') {
+      for (const it of (r.items || []).filter((i) => i.kind === 'dolce')) {
+        const item = matchItem(it.name);
+        rows.push({ ...base, offer_name: it.name, label: `${it.qty} × ${it.name}`, item: item || '', qty: it.qty, from: bestStock(item, it.qty), to: roomIds[0], roomIds, newCat: '', newStock: it.qty });
+      }
+    } else {
+      // ce qui a été monté pour cette offre / salle, encore présent dans la salle
+      const mounted = PL.offerMoves.filter((m) => m.phase === 'Montage').flatMap((m) => m.lines).filter((l) => l.offer_id === o.id && l.room_name === r.name);
+      const agg = new Map();
+      for (const l of mounted) { const k = `${l.item_id}|${l.to}`; const a = agg.get(k) || { ...l, qty: 0 }; a.qty += l.qty; agg.set(k, a); }
+      if (agg.size) {
+        for (const l of agg.values()) {
+          const here = qtyAt(l.item_id, l.to);
+          rows.push({ ...base, offer_name: l.offer_name, label: D.items.find((i) => i.id === l.item_id)?.name || l.offer_name, item: l.item_id, qty: Math.min(l.qty, here), max: here, from: l.to, to: l.from, fixed: true, on: here > 0 });
+        }
+      } else {
+        // montage fait sans passer par l'app : on propose le matériel Dolce de la fiche s'il est dans la salle
+        for (const it of (r.items || []).filter((i) => i.kind === 'dolce')) {
+          const item = matchItem(it.name);
+          const room = item && roomIds.find((id) => qtyAt(item, id) > 0);
+          const here = room ? qtyAt(item, room) : 0;
+          rows.push({ ...base, offer_name: it.name, label: `${it.qty} × ${it.name}`, item: item || '', qty: Math.min(it.qty, here), max: here, from: room || roomIds[0], to: stocks()[0]?.id, fixed: true, on: here > 0 });
+        }
+      }
+    }
+  }
+  PH.rows = rows;
+}
+
+function itemOptions(sel, offerName) {
+  const cats = [...new Set(D.items.map((i) => i.category))].sort();
+  return `<option value="">— choisir —</option>` + cats.map((c) => `<optgroup label="${esc(c)}">${D.items.filter((i) => i.category === c).map((i) => `<option value="${i.id}" ${i.id === sel ? 'selected' : ''}>${esc(i.name)}</option>`).join('')}</optgroup>`).join('')
+    + `<option value="new" ${sel === 'new' ? 'selected' : ''}>＋ Nouveau au catalogue : « ${esc(offerName)} »</option>`;
+}
+const locOptions = (ids, sel) => ids.map((id) => `<option value="${id}" ${id === sel ? 'selected' : ''}>${esc(locName(id))}</option>`).join('');
+
+function renderPhase() {
+  const m = PH.phase === 'Montage';
+  $('#phTitle').textContent = `Prêt — ${PH.body.client}`;
+  $('#phChoice').innerHTML = PH.todo.length > 1
+    ? `<div class="plwarn" style="margin:0 0 10px">Le montage et le démontage sont tous les deux prévus dans cette case. Lequel valides-tu maintenant ? L'autre restera <b>en rouge</b> dans la case jusqu'à sa validation.</div>
+       <div class="seg" id="phPhase">${PH.todo.map((p) => `<button type="button" data-p="${p}" class="${p === PH.phase ? 'active' : ''}">${p === 'Montage' ? 'Montage (stock → salle)' : 'Démontage (salle → stock)'}</button>`).join('')}</div>`
+    : `<p class="muted" style="margin:0">${m ? '<b>Montage</b> : le matériel Dolce de la fiche part du stock vers la salle.' : '<b>Démontage</b> : le matériel monté revient de la salle vers le stock.'}</p>`;
+  if (!PH.rows.length) {
+    $('#phBody').innerHTML = `<p class="muted">Aucun matériel Dolce ${m ? 'à monter dans cette fiche' : 'à ramener (rien n\'a été monté via l\'application pour cette offre)'}${PH.ext.length ? '' : '. Tu peux valider l\'étape directement'}.</p>`;
+  } else {
+    let h = '', grp = null;
+    h += `<div class="pdfwrap" style="max-height:55vh"><table class="pdft ph"><thead><tr><th></th><th>${m ? 'Fiche technique' : 'Matériel'}</th>${m ? '<th>Matériel de l\'application</th>' : ''}<th>Qté</th><th>Depuis</th><th>Vers</th><th></th></tr></thead><tbody>`;
+    PH.rows.forEach((r, i) => {
+      if (r.group !== grp) { grp = r.group; h += `<tr class="dh"><td colspan="${m ? 7 : 6}">${esc(grp)}</td></tr>`; }
+      const avail = r.item === 'new' ? Number(r.newStock) || 0 : r.item ? qtyAt(Number(r.item), Number(r.from)) : 0;
+      const status = !r.item ? '<span class="lack">à choisir</span>' : avail >= r.qty ? `<span class="okq">✓ ${avail} dispo</span>` : `<span class="lack">⚠ ${avail} dispo</span>`;
+      h += `<tr class="${r.on ? '' : 'off'}"><td><input type="checkbox" data-ph="${i}|on" ${r.on ? 'checked' : ''}></td>
+        <td>${esc(r.label)}</td>
+        ${m ? `<td><select data-ph="${i}|item">${itemOptions(r.item, r.offer_name)}</select>
+          ${r.item === 'new' ? `<div class="row" style="margin-top:4px;gap:6px"><input data-ph="${i}|newCat" placeholder="Catégorie" list="cats" value="${esc(r.newCat)}" style="width:120px">
+            <label class="chk" style="font-size:12px">en stock <input type="number" min="0" data-ph="${i}|newStock" value="${r.newStock}" style="width:60px"></label></div>` : ''}</td>` : ''}
+        <td><input type="number" min="0" ${r.max != null ? `max="${r.max}"` : ''} data-ph="${i}|qty" value="${r.qty}" style="width:64px"></td>
+        <td>${m ? `<select data-ph="${i}|from">${locOptions(stocks().map((s) => s.id), r.from)}</select>` : esc(locName(r.from))}</td>
+        <td>${m ? `<select data-ph="${i}|to">${locOptions(r.roomIds, r.to)}</select>` : `<select data-ph="${i}|to">${locOptions(stocks().map((s) => s.id), r.to)}</select>`}</td>
+        <td>${m ? status : `<span class="muted" style="font-size:12px">${r.max ?? 0} dans la salle</span>`}</td></tr>`;
+    });
+    h += '</tbody></table></div><p class="muted" style="font-size:12px;margin:6px 0 0">Les lignes décochées ne sont pas déplacées. Le choix « matériel de l\'application » est retenu pour les prochaines fiches.</p>';
+    $('#phBody').innerHTML = h;
+  }
+  if (PH.ext.length) {
+    // matériel externe : coché = réellement installé (montage) / désinstallé (démontage) ; rien ne bouge dans le stock
+    let h = `<div class="phgrp" style="margin-top:14px">Matériel de sociétés externes — ${m ? 'installé' : 'désinstallé'} <span class="muted" style="font-weight:400;font-size:12px">(pas de déplacement de stock, mais noté dans la salle)</span></div>
+      <div class="pdfwrap" style="max-height:35vh"><table class="pdft ph"><tbody>`;
+    let grp = null;
+    PH.ext.forEach((x, i) => {
+      if (x.group !== grp) { grp = x.group; h += `<tr class="dh"><td colspan="3">${esc(grp)}</td></tr>`; }
+      h += `<tr class="${x.on ? '' : 'off'}"><td style="width:28px"><input type="checkbox" data-px="${i}" ${x.on ? 'checked' : ''}></td><td>${x.qty} × ${esc(x.name)}</td><td><span class="pill ext">${esc(x.supplier)}</span></td></tr>`;
+    });
+    $('#phBody').insertAdjacentHTML('beforeend', h + '</tbody></table></div>');
+  }
+  const n = PH.rows.filter((r) => r.on && r.qty > 0).reduce((s, r) => s + Number(r.qty), 0);
+  $('#phGo').textContent = n ? `Valider le ${PH.phase.toLowerCase()} et déplacer ${n} pièce${n > 1 ? 's' : ''}` : `Valider le ${PH.phase.toLowerCase()}`;
+  $('#phNoMove').textContent = 'Valider sans déplacer';
+  $('#phNoMove').style.display = n ? '' : 'none';
+}
+
+function openPhase(ev, body, todo, ofs) {
+  Object.assign(PH, { mode: 'do', ev, body, todo, ofs, phase: todo[0] });
+  buildPhaseRows();
+  $('#phErr').textContent = '';
+  $('#evDlg').close(); renderPhase(); $('#phDlg').showModal();
+}
+
+// ----- Annuler une validation (case passée en « Prêt » par erreur) : trajets inverses de ce qui a été déplacé
+function openUndo(ev, body) {
+  const done = PHASES.filter((p) => (ev.done || []).includes(p));
+  Object.assign(PH, { mode: 'undo', ev, body: { ...body, color: body.color === 'green' ? 'red' : body.color }, todo: done, ofs: [], phase: (ev.done || []).slice(-1)[0] || done[0] });
+  buildUndoRows();
+  $('#phErr').textContent = '';
+  $('#evDlg').close(); renderUndo(); $('#phDlg').showModal();
+}
+function buildUndoRows() {
+  const agg = new Map();
+  for (const m of PL.offerMoves.filter((x) => x.event_id === PH.ev.id && x.phase === PH.phase)) for (const l of m.lines) {
+    const k = `${l.item_id}|${l.from}|${l.to}`; const a = agg.get(k) || { ...l, qty: 0 }; a.qty += l.qty; agg.set(k, a);
+  }
+  // retour : de là où le matériel a été mis (to) vers là d'où il venait (from), sans dépasser ce qui s'y trouve encore
+  PH.rows = [...agg.values()].map((l) => {
+    const here = qtyAt(l.item_id, l.to);
+    return { item: l.item_id, label: D.items.find((i) => i.id === l.item_id)?.name || l.offer_name, qty: Math.min(l.qty, here), max: here, from: l.to, to: l.from, on: here > 0 };
+  });
+}
+function renderUndo() {
+  const mont = PH.phase === 'Montage';
+  $('#phTitle').textContent = `Annuler la validation — ${PH.body.client}`;
+  $('#phChoice').innerHTML = (PH.todo.length > 1
+    ? `<div class="seg" id="phPhase" style="margin-bottom:8px">${PH.todo.map((p) => `<button type="button" data-p="${p}" class="${p === PH.phase ? 'active' : ''}">Annuler le ${p.toLowerCase()}</button>`).join('')}</div>` : '')
+    + `<p class="muted" style="margin:0">Le <b>${PH.phase.toLowerCase()}</b> n'est plus considéré comme fait (il repasse en rouge dans la case). ${mont ? 'Le matériel monté revient au stock d\'où il est parti.' : 'Le matériel ramené retourne dans la salle.'}</p>`;
+  if (!PH.rows.length) {
+    $('#phBody').innerHTML = '<p class="muted">Aucun matériel n\'avait été déplacé lors de cette validation : rien à remettre.</p>';
+  } else {
+    $('#phBody').innerHTML = `<div class="pdfwrap" style="max-height:55vh"><table class="pdft ph"><thead><tr><th></th><th>Matériel</th><th>Qté</th><th>Depuis</th><th>Vers</th><th></th></tr></thead><tbody>` +
+      PH.rows.map((r, i) => `<tr class="${r.on ? '' : 'off'}"><td><input type="checkbox" data-ph="${i}|on" ${r.on ? 'checked' : ''}></td><td>${esc(r.label)}</td>
+        <td><input type="number" min="0" max="${r.max}" data-ph="${i}|qty" value="${r.qty}" style="width:64px"></td>
+        <td>${esc(locName(r.from))}</td><td>${esc(locName(r.to))}</td><td><span class="muted" style="font-size:12px">${r.max} à cet endroit</span></td></tr>`).join('') +
+      '</tbody></table></div>';
+  }
+  const n = PH.rows.filter((r) => r.on && r.qty > 0).reduce((s, r) => s + Number(r.qty), 0);
+  $('#phGo').textContent = n ? `Annuler le ${PH.phase.toLowerCase()} et remettre ${n} pièce${n > 1 ? 's' : ''}` : `Annuler le ${PH.phase.toLowerCase()}`;
+  $('#phNoMove').textContent = 'Annuler sans déplacer';
+  $('#phNoMove').style.display = n ? '' : 'none';
+}
+async function submitUndo(move) {
+  $('#phErr').textContent = '';
+  const lines = move ? PH.rows.filter((r) => r.on && r.qty > 0).map((r) => ({ item_id: r.item, qty: Math.min(r.qty, r.max), from: r.from, to: r.to })) : [];
+  try {
+    const r = await api('/api/planning/phase/undo', { event: PH.body, phase: PH.phase, lines });
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    await load();
+    $('#phDlg').close(); renderPlanning();
+    toast(`${PH.phase} annulé ✔${r.moved ? ` — ${r.moved} pièce${r.moved > 1 ? 's' : ''} remise${r.moved > 1 ? 's' : ''} en place` : ''}`);
+  } catch (err) { $('#phErr').textContent = err.message; }
+}
+$('#evDone').addEventListener('click', (e) => {
+  if (!e.target.closest('#evUndo')) return;
+  const ev = PL.events.find((x) => x.id === EV.id); if (ev) openUndo(ev, evPayload());
+});
+
+$('#phBack').onclick = () => { $('#phDlg').close(); $('#evDlg').showModal(); };
+$('#phChoice').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-p]'); if (!b || b.dataset.p === PH.phase) return;
+  PH.phase = b.dataset.p;
+  if (PH.mode === 'undo') { buildUndoRows(); renderUndo(); } else { buildPhaseRows(); renderPhase(); }
+});
+$('#phBody').addEventListener('change', (e) => {
+  const px = e.target.closest('[data-px]');
+  if (px) { PH.ext[Number(px.dataset.px)].on = px.checked; px.closest('tr').classList.toggle('off', !px.checked); return; }
+  const t = e.target.closest('[data-ph]'); if (!t) return;
+  const [i, f] = t.dataset.ph.split('|'); const r = PH.rows[Number(i)];
+  if (f === 'on') r.on = t.checked;
+  else if (f === 'item') { r.item = t.value === 'new' ? 'new' : t.value ? Number(t.value) : ''; if (r.item && r.item !== 'new') r.from = bestStock(r.item, r.qty); }
+  else if (['qty', 'newStock'].includes(f)) r[f] = Math.max(0, Number(t.value) || 0);
+  else if (['from', 'to'].includes(f)) r[f] = Number(t.value);
+  else r[f] = t.value;
+  if (PH.mode === 'undo') renderUndo(); else renderPhase();
+});
+
+async function submitPhase(move) {
+  $('#phErr').textContent = '';
+  const lines = [];
+  if (move) for (const r of PH.rows.filter((x) => x.on && x.qty > 0)) {
+    if (!r.item) { $('#phErr').textContent = `Choisis le matériel de l'application pour « ${r.label} » (ou décoche la ligne).`; return; }
+    if (r.item === 'new' && !(Number(r.newStock) > 0)) { $('#phErr').textContent = `Indique combien de « ${r.offer_name} » il y a en stock.`; return; }
+    lines.push({ item_id: r.item === 'new' ? null : r.item, new_item: r.item === 'new' ? { name: r.offer_name, category: r.newCat, stock_qty: r.newStock } : null,
+      qty: r.qty, from: r.from, to: r.to, offer_name: r.offer_name, offer_id: r.offer_id, room_name: r.room_name });
+  }
+  try {
+    const external = PH.ext.filter((x) => x.on).map(({ qty, name, supplier, offer_id, room_name, room_ids }) => ({ qty, name, supplier, offer_id, room_name, room_ids }));
+    const r = await api('/api/planning/phase', { event: PH.body, phase: PH.phase, lines, external });
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    await load(); // stock mis à jour (inventaire, salles)
+    $('#phDlg').close(); renderPlanning();
+    const left = PHASES.filter((p) => PH.todo.includes(p) && p !== PH.phase);
+    toast(`${PH.phase} validé ✔${r.moved ? ` — ${r.moved} pièce${r.moved > 1 ? 's' : ''} déplacée${r.moved > 1 ? 's' : ''}` : ''}${left.length ? ` (${left[0].toLowerCase()} encore à faire)` : ''}`);
+  } catch (err) { $('#phErr').textContent = err.message; }
+}
+$('#phGo').onclick = () => (PH.mode === 'undo' ? submitUndo(true) : submitPhase(true));
+$('#phNoMove').onclick = () => (PH.mode === 'undo' ? submitUndo(false) : submitPhase(false));
+
+// ----- Import du BEO Book (PDF) : lecture, aperçu, puis création des événements
+const PDFI = { file: null, data: null, sel: new Set() };
+$('#plSource').addEventListener('click', (e) => {
+  if (e.target.closest('#plPdf')) { PDFI.file = null; PDFI.data = null; $('#pdfFile').value = ''; $('#pdfErr').textContent = ''; $('#pdfBody').innerHTML = '<p class="muted">Choisis le PDF du BEO Book : l\'application lit chaque BEO (société, date, statut, salles, matériel AV) et te montre ce qu\'elle va créer <b>avant</b> d\'importer.</p>'; $('#pdfGo').disabled = true; $('#pdfCount').textContent = ''; $('#pdfDlg').showModal(); }
+});
+$('#pdfClose').onclick = () => $('#pdfDlg').close();
+
+async function pdfPreview() {
+  $('#pdfErr').textContent = '';
+  $('#pdfBody').innerHTML = '<p class="muted">Lecture du PDF en cours…</p>';
+  try {
+    const r = await fetch('/api/planning/pdf/preview', { method: 'POST', headers: { 'X-Filename': encodeURIComponent(PDFI.file.name) }, body: PDFI.file });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Erreur');
+    PDFI.data = j; PDFI.sel = new Set(j.events.filter((e) => e.selected).map((e) => e.i));
+    renderPdf();
+  } catch (err) { $('#pdfBody').innerHTML = ''; $('#pdfErr').textContent = err.message; $('#pdfGo').disabled = true; }
+}
+$('#pdfFile').addEventListener('change', () => { PDFI.file = $('#pdfFile').files[0] || null; if (PDFI.file) pdfPreview(); });
+
+function roomPicker(key) {
+  return AREA_ORDER.map((a) => {
+    const ls = salles().filter((l) => areaOf(l) === a);
+    return ls.length ? `<div class="fl">${esc(a)}</div>` + ls.map((l) => `<label><input type="checkbox" value="${l.id}">${esc(l.name)}</label>`).join('') : '';
+  }).join('');
+}
+
+function renderPdf() {
+  const d = PDFI.data;
+  const stLabel = { new: 'Nouveau', same: 'Déjà présent', differs: 'Différent', info: 'Infos BEO à ajouter' };
+  const byDate = {};
+  d.events.forEach((e) => (byDate[e.date] ||= []).push(e));
+  const nAv = d.events.filter((e) => e.hasAv).length;
+  let html = `<p><b>${d.beoCount} BEO</b> lus dans « ${esc(d.filename)} » : <b>${d.events.length}</b> salles de l'application concernées, dont ${nAv} avec une section matériel AV` +
+    (d.from ? ` (du ${dayLabel(d.from)} au ${dayLabel(d.to)})` : '') + '.</p>';
+  if (d.warnings.length) html += `<div class="plwarn">${[...new Set(d.warnings)].slice(0, 6).map(esc).join('<br>')}</div>`;
+  if (d.unmatched.length) {
+    html += `<details class="unm"><summary><b>${d.unmatched.length} noms de salles non reconnus</b> (ignorés) — clique pour les associer à une salle de l'application</summary>` +
+      d.unmatched.map((u) => `<div class="u" data-key="${esc(u.key)}" data-name="${esc(u.name)}"><span><b>${esc(u.name)}</b> <span class="muted">${u.count ? '×' + u.count : ''}</span></span>
+        <button type="button" class="btn ghost" data-pick="1" style="padding:2px 10px">Associer…</button>${u.saved.length ? `<span class="muted">→ ${u.saved.map(locName).map(esc).join(', ')}</span>` : ''}
+        <div class="pick evrooms" style="display:none">${roomPicker(u.key)}<div style="margin-top:6px"><button type="button" class="btn" data-savemap="1" style="padding:3px 12px">Enregistrer</button></div></div></div>`).join('') + '</details>';
+  }
+  html += `<div class="row" style="margin-top:10px;font-size:13px"><button type="button" class="btn ghost" data-selall="1" style="padding:3px 10px">Tout cocher</button>
+    <button type="button" class="btn ghost" data-selnone="1" style="padding:3px 10px">Tout décocher</button>
+    <button type="button" class="btn ghost" data-selav="1" style="padding:3px 10px">Seulement avec matériel AV</button></div>`;
+  html += '<div class="pdfwrap"><table class="pdft"><thead><tr><th></th><th>Salle</th><th>Société</th><th>Horaire</th><th>Description</th><th>Statut</th><th>État</th></tr></thead><tbody>';
+  for (const day of Object.keys(byDate).sort()) {
+    html += `<tr class="dh"><td colspan="7">${dayLabel(day, true)}</td></tr>`;
+    for (const e of byDate[day]) {
+      const tip = [`BEO ${e.beo}`, `Compte : ${e.account}`, e.event_name ? `Événement : ${e.event_name}` : '', e.av.length ? 'AV : ' + e.av.join(', ') : 'Aucun matériel AV dans le BEO', e.clash.length ? 'Déjà dans cette salle ce jour-là : ' + e.clash.join(', ') : ''].filter(Boolean).join('\n');
+      html += `<tr class="${e.hasAv ? '' : 'noav'}" title="${esc(tip)}"><td><input type="checkbox" data-i="${e.i}" ${PDFI.sel.has(e.i) ? 'checked' : ''}></td>
+        <td>${esc(e.room_name)}</td><td><b>${esc(e.client)}</b>${e.clash.length ? ' <span class="muted" title="autre événement déjà dans cette salle">⚠</span>' : ''}</td>
+        <td>${esc(e.start)}–${esc(e.end)}</td><td>${e.detail ? esc(e.detail) : '<span class="muted">' + (e.hasAv ? '—' : 'pas de matériel AV') + '</span>'}</td>
+        <td><span class="pill ${e.color}">${e.color === 'yellow' ? 'Prospect' : 'À préparer'}</span> <span class="muted">${esc(e.status)}</span></td>
+        <td><span class="pill ${e.state}">${stLabel[e.state]}</span></td></tr>`;
+    }
+  }
+  html += '</tbody></table></div>';
+  $('#pdfBody').innerHTML = html;
+  updPdfCount();
+}
+function updPdfCount() {
+  const n = PDFI.sel.size;
+  $('#pdfCount').textContent = `${n} événement${n > 1 ? 's' : ''} coché${n > 1 ? 's' : ''}`;
+  $('#pdfGo').disabled = !n; $('#pdfGo').textContent = n ? `Importer ${n} événement${n > 1 ? 's' : ''}` : 'Importer';
+}
+$('#pdfBody').addEventListener('change', (e) => {
+  const c = e.target.closest('[data-i]'); if (!c) return;
+  const i = Number(c.dataset.i); if (c.checked) PDFI.sel.add(i); else PDFI.sel.delete(i); updPdfCount();
+});
+$('#pdfBody').addEventListener('click', async (e) => {
+  const d = PDFI.data; if (!d) return;
+  if (e.target.closest('[data-selall]')) PDFI.sel = new Set(d.events.map((x) => x.i));
+  else if (e.target.closest('[data-selnone]')) PDFI.sel = new Set();
+  else if (e.target.closest('[data-selav]')) PDFI.sel = new Set(d.events.filter((x) => x.hasAv).map((x) => x.i));
+  else if (e.target.closest('[data-pick]')) { const p = e.target.closest('.u').querySelector('.pick'); p.style.display = p.style.display === 'none' ? '' : 'none'; return; }
+  else if (e.target.closest('[data-savemap]')) {
+    const u = e.target.closest('.u');
+    try {
+      await api('/api/planning/pdf/mapping', { name: u.dataset.name, room_ids: [...u.querySelectorAll('.pick input:checked')].map((c) => Number(c.value)) });
+      await pdfPreview(); toast('Association enregistrée (retenue pour les prochains BEO Book) ✔');
+    } catch (err) { $('#pdfErr').textContent = err.message; }
+    return;
+  } else return;
+  renderPdf();
+});
+$('#pdfGo').onclick = async () => {
+  const d = PDFI.data; if (!d) return;
+  $('#pdfErr').textContent = '';
+  const events = d.events.filter((e) => PDFI.sel.has(e.i)).map((e) => ({ date: e.date, room_id: e.room_id, start: e.start, end: e.end, client: e.client, detail: e.detail, color: e.color, info: e.info, replace_id: e.state === 'differs' || e.state === 'info' ? e.existing_id : null, info_only: e.state === 'info' }));
+  try {
+    const r = await api('/api/planning/pdf/import', { events });
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    const ds = events.map((e) => e.date).sort(); const td = isoToday();
+    PL.week = weekStart(ds[0] <= td && td <= ds[ds.length - 1] ? td : ds[0]);
+    renderPlanning();
+    if (r.skipped.length) { $('#pdfErr').textContent = `${r.added + r.updated} importés, ${r.skipped.length} ignorés : ${r.skipped.slice(0, 3).join(' ; ')}`; return; }
+    $('#pdfDlg').close(); toast(`BEO Book importé ✔ (${r.added} ajouté${r.added > 1 ? 's' : ''}${r.updated ? `, ${r.updated} mis à jour` : ''})`);
+  } catch (err) { $('#pdfErr').textContent = err.message; }
+};
+
+// ----- Fiches techniques (offres) : lecture du PDF, vérification, enregistrement
+const OF = { data: null, picked: new Set(), confirmDel: null };
+const kindPill = (i) => i.kind === 'dolce' ? '<span class="pill dolce">Dolce</span>' : i.kind === 'inclus' ? '<span class="pill inc">Inclus</span>'
+  : i.kind === 'prix' ? `<span class="pill inc">${esc(i.supplier)} €</span>` : `<span class="pill ext">${esc(i.supplier)}</span>`;
+
+function ofMode(preview) {
+  $('#ofSave').style.display = preview ? '' : 'none';
+  $('#ofBack').style.display = preview ? '' : 'none';
+}
+function renderOfList() {
+  OF.data = null; ofMode(false);
+  const list = PL.offers.slice().sort((a, b) => (a.rooms[0]?.setup || '').localeCompare(b.rooms[0]?.setup || ''));
+  $('#ofBody').innerHTML = `<p class="muted" style="margin:6px 0 10px">L'application lit la fiche (société, salles, dates de montage, matériel) et te montre ce qu'elle a compris <b>avant</b> d'enregistrer. L'étiquette <a class="ofr" style="pointer-events:none">📄 Offre</a> apparaît ensuite dans la grille, dans la salle, au jour du montage : un clic ouvre le PDF.</p>` +
+    (list.length ? `<div class="lbl">Offres enregistrées (${list.length})</div><div class="oflist">` + list.map((o) => `<div class="o">
+      <span style="flex:1;min-width:240px"><b>${esc(o.client)}</b> <span class="muted">${esc([o.title, o.version].filter(Boolean).join(' '))}</span><br>
+      <span class="muted" style="font-size:13px">${o.rooms.map((r) => `${esc(r.room_ids.length ? r.room_ids.map(locName).join('+') : (r.name || '?') + ' (hors grille)')} : montage ${r.setup ? dayLabel(r.setup) : '?'}`).join(' · ')}</span></span>
+      <a class="btn ghost" style="text-decoration:none;padding:4px 10px" href="/api/offers/${o.id}/pdf" target="_blank" rel="noopener">Ouvrir le PDF</a>
+      <button type="button" class="btn ghost" data-ofdel="${o.id}" style="padding:4px 10px;color:var(--err)">${OF.confirmDel === o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`).join('') + '</div>'
+      : '<p class="muted">Aucune offre enregistrée pour le moment.</p>');
+}
+$('#plSource').addEventListener('click', (e) => {
+  if (!e.target.closest('#plOffer')) return;
+  OF.confirmDel = null; $('#ofFile').value = ''; $('#ofErr').textContent = '';
+  renderOfList(); $('#ofDlg').showModal();
+});
+$('#ofClose').onclick = () => $('#ofDlg').close();
+$('#ofBack').onclick = () => { $('#ofFile').value = ''; $('#ofErr').textContent = ''; renderOfList(); };
+
+$('#ofFile').addEventListener('change', async () => {
+  const f = $('#ofFile').files[0]; if (!f) return;
+  $('#ofErr').textContent = ''; $('#ofBody').innerHTML = '<p class="muted">Lecture de la fiche en cours…</p>';
+  try {
+    const r = await fetch('/api/offers/preview', { method: 'POST', headers: { 'X-Filename': encodeURIComponent(f.name) }, body: f });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || 'Erreur');
+    OF.data = j; OF.picked = new Set();
+    if (j.manual) j.rooms = [{ name: '', page: 1, setup: '', room_ids: [], items: [] }];
+    renderOfPreview();
+  } catch (err) { renderOfList(); $('#ofErr').textContent = err.message; }
+});
+
+function ofRoomCell(r, i) {
+  const names = r.room_ids.map(locName);
+  return `${r.skip ? '<span class="muted">Pas affichée dans la grille</span>' : names.length ? `<b>${names.map(esc).join(' + ')}</b>` : `<span style="color:var(--err)">⚠ ${r.name ? 'Salle non reconnue' : 'Aucune salle choisie'}</span>`}
+    <div style="margin-top:4px"><button type="button" class="btn ghost" data-ofpick="${i}" style="padding:2px 10px;font-size:12px">${names.length ? 'Changer…' : 'Choisir la salle…'}</button>
+    ${r.name ? `<label class="chk" style="display:inline-flex;margin-left:6px"><input type="checkbox" data-ofskip="${i}" ${r.skip ? 'checked' : ''}> hors grille</label>` : ''}</div>
+    <div class="pick evrooms" data-ofroom="${i}" style="display:none;margin-top:6px">${roomPicker()}</div>`;
+}
+
+function renderOfPreview() {
+  const d = OF.data; ofMode(true);
+  let h = '';
+  if (d.manual) {
+    h += `<div class="plwarn">${esc(d.reason)}.<br>Tu peux quand même l'enregistrer comme offre : indique la société, la salle et le jour du montage.</div>`;
+    const r0 = d.rooms[0];
+    h += `<div class="row" style="margin-top:12px"><label style="flex:2;min-width:220px">Société / client<input id="ofClient" value="${esc(d.client)}"></label></div>
+      <div class="row" style="margin-top:10px">
+      <label style="flex:1;min-width:140px">Montage<input type="date" id="ofSetup0" data-ofd="0|setup" value="${esc(r0.setup || '')}"></label>
+      <label style="flex:1;min-width:140px">Show du<input type="date" data-ofd="0|show_from" value="${esc(r0.show_from || '')}"></label>
+      <label style="flex:1;min-width:140px">au<input type="date" data-ofd="0|show_to" value="${esc(r0.show_to || '')}"></label>
+      <label style="flex:1;min-width:140px">Démontage<input type="date" data-ofd="0|demontage" value="${esc(r0.demontage || '')}"></label></div>
+      <div class="lbl" style="margin-top:12px">Salle(s)</div><div>${ofRoomCell(d.rooms[0], 0)}</div>`;
+  } else {
+    h += `<div class="row" style="align-items:center;margin-top:4px"><label style="flex:1;min-width:240px">Société / client<input id="ofClient" value="${esc(d.client)}"></label>
+      <span class="muted" style="font-size:13px">${esc([d.title, d.version].filter(Boolean).join(' '))}${d.dated ? ` · datée du ${esc(d.dated)}` : ''} · ${esc(d.filename)}</span></div>`;
+    if (d.replaces.length) h += `<label class="chk plwarn" style="margin-top:10px"><input type="checkbox" id="ofReplace" checked> Remplacer l'offre déjà enregistrée pour ce client et ces jours-là (${d.replaces.map((o) => `${esc(o.version || '?')} du ${esc(o.ts.slice(0, 10))}`).join(', ')})</label>`;
+    h += `<p class="muted" style="font-size:13px;margin:8px 0 0">À l'enregistrement, les étiquettes <span class="tg setup">Montage</span><span class="tg show">Show</span><span class="tg demontage">Démontage</span> sont ajoutées dans la grille (sur l'événement de cette société s'il existe, sinon il est créé). La fiche ne donne pas de démontage : par défaut, le dernier jour de show.</p>`;
+    h += `<div class="pdfwrap"><table class="pdft oft"><thead><tr><th>Salle (fiche)</th><th>Salle dans l'application</th><th>Montage</th><th>Show</th><th>Démontage</th><th>Matériel</th></tr></thead><tbody>`;
+    d.rooms.forEach((r, i) => {
+      const p = offerParts(r.items);
+      h += `<tr><td><b>${esc(r.name)}</b><br><span class="muted">page ${r.page}</span></td><td>${ofRoomCell(r, i)}</td>
+        <td><input type="date" data-ofd="${i}|setup" value="${esc(r.setup || '')}"></td><td>${esc(r.show_raw || '—')}</td>
+        <td><input type="date" data-ofd="${i}|demontage" value="${esc(r.demontage || '')}"></td>
+        <td><details><summary>${p.dolce.length ? `<span class="pill dolce">Dolce ${p.dolce.length}</span> ` : ''}${Object.entries(p.ext).map(([s, n]) => `<span class="pill ext">${esc(s)} ${n}</span>`).join(' ')} ${p.inc ? `<span class="pill inc">Inclus ${p.inc}</span>` : ''}</summary>
+          <ul>${r.items.map((it) => `<li>${it.qty} × ${esc(it.name)} ${kindPill(it)}</li>`).join('')}</ul></details></td></tr>`;
+    });
+    h += '</tbody></table></div>';
+    if (d.services.length) h += `<p class="muted" style="font-size:13px;margin:8px 0 0">Services : ${d.services.map((s) => `${s.qty} × ${esc(s.name)} (${esc(s.kind === 'prix' ? s.supplier + ' €' : s.supplier)})`).join(' · ')}</p>`;
+  }
+  $('#ofBody').innerHTML = h;
+  // coche les salles déjà choisies dans les sélecteurs
+  d.rooms.forEach((r, i) => document.querySelectorAll(`[data-ofroom="${i}"] input`).forEach((c) => { c.checked = r.room_ids.includes(Number(c.value)); }));
+}
+
+$('#ofBody').addEventListener('click', async (e) => {
+  const del = e.target.closest('[data-ofdel]');
+  if (del) {
+    const id = Number(del.dataset.ofdel);
+    if (OF.confirmDel !== id) { OF.confirmDel = id; renderOfList(); return; }
+    try {
+      const r = await api('/api/offers/delete', { id });
+      PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+      OF.confirmDel = null; renderOfList(); renderPlanning(); toast('Offre supprimée');
+    } catch (err) { $('#ofErr').textContent = err.message; }
+    return;
+  }
+  const pk = e.target.closest('[data-ofpick]');
+  if (pk) { const p = $(`[data-ofroom="${pk.dataset.ofpick}"]`); p.style.display = p.style.display === 'none' ? '' : 'none'; }
+});
+$('#ofBody').addEventListener('change', (e) => {
+  const d = OF.data; if (!d) return;
+  const box = e.target.closest('[data-ofroom]');
+  if (box) {
+    const i = Number(box.dataset.ofroom);
+    d.rooms[i].room_ids = [...box.querySelectorAll('input:checked')].map((c) => Number(c.value));
+    if (d.rooms[i].room_ids.length) d.rooms[i].skip = false;
+    OF.picked.add(i);
+    const td = box.parentElement, open = box.style.display;
+    td.innerHTML = ofRoomCell(d.rooms[i], i);
+    const nb = td.querySelector('[data-ofroom]'); nb.style.display = open;
+    nb.querySelectorAll('input').forEach((c) => { c.checked = d.rooms[i].room_ids.includes(Number(c.value)); });
+    return;
+  }
+  const sk = e.target.closest('[data-ofskip]');
+  if (sk) { d.rooms[Number(sk.dataset.ofskip)].skip = sk.checked; renderOfPreview(); return; }
+  const st = e.target.closest('[data-ofd]');
+  if (st) { const [i, f] = st.dataset.ofd.split('|'); d.rooms[Number(i)][f] = st.value || null; }
+});
+
+$('#ofSave').onclick = async () => {
+  const d = OF.data; if (!d) return;
+  $('#ofErr').textContent = '';
+  try {
+    // retient les associations « nom de salle de la fiche » → salle(s) de l'application (aussi utilisées pour le BEO Book)
+    for (const i of OF.picked) { const r = d.rooms[i]; if (r.name && r.room_ids.length) await api('/api/planning/pdf/mapping', { name: r.name, room_ids: r.room_ids }); }
+    const r = await api('/api/offers/save', {
+      token: d.token, filename: d.filename, client: $('#ofClient').value, version: d.version || '', title: d.title || '', dated: d.dated || '',
+      rooms: d.rooms, services: d.services || [], replace_ids: $('#ofReplace')?.checked ? d.replaces.map((o) => o.id) : [],
+    });
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    const first = d.rooms.filter((x) => x.setup && !x.skip).map((x) => x.setup).sort()[0];
+    if (first) { PL.week = weekStart(first); PL.day = first; }
+    $('#ofDlg').close(); renderPlanning();
+    toast(`Offre enregistrée ✔${first ? ` — montage le ${dayLabel(first)}` : ''}`);
+  } catch (err) { $('#ofErr').textContent = err.message; }
+};
+
+// Plusieurs postes : l'onglet se met à jour quand quelqu'un d'autre modifie le planning
+setInterval(async () => {
+  if ($('#tab-planning').classList.contains('hidden') || $('#evDlg').open) return;
+  try {
+    const s = await api('/api/planning/status');
+    if (s.version !== PL.status.version) await loadPlanning(true);
+  } catch {}
+}, 8000);
+
+
+load().then(() => loadPlanning()); // le planning sert aussi à l'onglet Salles (matériel externe installé)
+</script>
+</body>
+</html>

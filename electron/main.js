@@ -1,0 +1,162 @@
+'use strict';
+// Application installable « Stock AV » (Electron)
+// - Mode « serveur » : ce PC garde la base et fait tourner le serveur (les autres PC s'y connectent)
+// - Mode « client » : se connecte au serveur d'un autre PC (adresse saisie au premier lancement)
+// - Mise à jour automatique depuis les « Releases » GitHub, vérifiée à chaque lancement
+const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, shell, clipboard } = require('electron');
+const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
+const { autoUpdater } = require('electron-updater');
+
+const ICON = path.join(__dirname, 'icon.png');
+const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
+const readConfig = () => { try { return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8')); } catch { return null; } };
+const saveConfig = (c) => { fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive: true }); fs.writeFileSync(CONFIG_FILE, JSON.stringify(c, null, 2)); };
+
+// Dossier des données proposé : celui de l'ancienne installation (Documents\stock-av) s'il contient déjà une base
+function suggestedDataDir() {
+  const old = path.join(os.homedir(), 'Documents', 'stock-av');
+  if (fs.existsSync(path.join(old, 'stock.db'))) return old;
+  return path.join(app.getPath('documents'), 'Stock AV');
+}
+// Adresses de ce PC sur le réseau (à donner aux autres PC)
+const lanUrls = (port) => Object.values(os.networkInterfaces()).flat()
+  .filter((n) => n && n.family === 'IPv4' && !n.internal && !n.address.startsWith('169.254'))
+  .map((n) => `http://${n.address}:${port}`);
+
+let win = null, tray = null, config = null, appUrl = null, quitting = false;
+const startHidden = process.argv.includes('--hidden'); // lancé au démarrage de Windows (mode serveur) : seulement l'icône près de l'horloge
+
+if (!app.requestSingleInstanceLock()) app.quit();
+app.on('second-instance', () => showWindow());
+
+function createWindow() {
+  win = new BrowserWindow({
+    width: 1400, height: 900, minWidth: 900, minHeight: 600, show: false, icon: ICON, title: 'Stock AV',
+    autoHideMenuBar: true, backgroundColor: '#f5f6f8',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
+  });
+  win.once('ready-to-show', () => { if (!startHidden) { win.maximize(); win.show(); } });
+  // liens externes (PDF des offres…) : dans une fenêtre de l'app ; autres sites : navigateur
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (appUrl && url.startsWith(appUrl)) return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
+    shell.openExternal(url); return { action: 'deny' };
+  });
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    if (code === -3 || !url.startsWith('http')) return; // -3 = chargement annulé (normal)
+    openSetup(`Impossible de joindre le serveur (${appUrl}) : ${desc}. Vérifie que le PC serveur est allumé et que l'application y tourne, ou change l'adresse.`);
+  });
+  win.on('close', (e) => {
+    // mode serveur : fermer la fenêtre ne coupe pas le serveur (il reste près de l'horloge)
+    if (config?.mode === 'server' && !quitting) {
+      e.preventDefault(); win.hide();
+      if (tray && !config.trayHintShown) {
+        tray.displayBalloon?.({ title: 'Stock AV continue de tourner', content: 'Le serveur reste actif pour les autres PC. Clic droit sur l\'icône près de l\'horloge pour quitter.', iconType: 'info' });
+        config.trayHintShown = true; saveConfig(config);
+      }
+    }
+  });
+  buildMenu();
+}
+function showWindow() { if (!win) return; if (win.isMinimized()) win.restore(); if (!win.isVisible()) { win.maximize(); win.show(); } win.focus(); }
+
+function openSetup(error) {
+  win.loadFile(path.join(__dirname, 'setup.html'), { query: error ? { error } : {} });
+  win.show();
+}
+
+function buildMenu() {
+  const items = [
+    { label: 'Recharger', accelerator: 'F5', click: () => (appUrl ? win.loadURL(appUrl) : openSetup()) },
+    { label: 'Paramètres de connexion…', click: () => openSetup() },
+  ];
+  if (config?.mode === 'server') items.push({ label: 'Ouvrir le dossier des données', click: () => shell.openPath(config.dataDir) });
+  items.push({ type: 'separator' }, { label: `Version ${app.getVersion()}`, enabled: false },
+    { label: 'Rechercher une mise à jour', click: () => checkUpdates(true) },
+    { label: 'Outils de développement', accelerator: 'F12', click: () => win.webContents.toggleDevTools() },
+    { type: 'separator' }, { label: 'Quitter', click: () => { quitting = true; app.quit(); } });
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Stock AV', submenu: items }]));
+}
+
+function createTray(port) {
+  tray = new Tray(ICON);
+  tray.setToolTip('Stock AV — serveur actif');
+  const urls = lanUrls(port);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Ouvrir Stock AV', click: showWindow },
+    { type: 'separator' },
+    { label: 'Adresse pour les autres PC :', enabled: false },
+    ...(urls.length ? urls.map((u) => ({ label: `   ${u}  (copier)`, click: () => clipboard.writeText(u) })) : [{ label: '   (pas de réseau)', enabled: false }]),
+    { type: 'separator' },
+    { label: 'Paramètres…', click: () => { showWindow(); openSetup(); } },
+    { label: 'Quitter (arrête le serveur)', click: () => { quitting = true; app.quit(); } },
+  ]));
+  tray.on('double-click', showWindow);
+}
+
+// ---- Mises à jour (GitHub Releases) : téléchargée en arrière-plan, installée au redémarrage
+let manualCheck = false;
+function checkUpdates(manual = false) {
+  if (!app.isPackaged) { if (manual) dialog.showMessageBox(win, { message: 'Les mises à jour ne fonctionnent que dans la version installée.' }); return; }
+  manualCheck = manual;
+  autoUpdater.checkForUpdates().catch(() => {});
+}
+autoUpdater.autoDownload = true;
+autoUpdater.on('update-not-available', () => { if (manualCheck) dialog.showMessageBox(win, { message: `Stock AV est à jour (version ${app.getVersion()}).` }); manualCheck = false; });
+autoUpdater.on('error', (e) => { if (manualCheck) dialog.showMessageBox(win, { type: 'warning', message: 'Impossible de vérifier les mises à jour.', detail: String(e?.message || e) }); manualCheck = false; });
+autoUpdater.on('update-downloaded', async (info) => {
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'info', buttons: ['Redémarrer maintenant', 'Plus tard'], defaultId: 0, cancelId: 1,
+    message: `Nouvelle version ${info.version} prête`,
+    detail: config?.mode === 'server' ? 'Le serveur sera coupé quelques secondes pendant le redémarrage.' : 'Elle sera installée au prochain lancement si tu choisis « Plus tard ».',
+  });
+  if (response === 0) { quitting = true; autoUpdater.quitAndInstall(); }
+});
+
+// ---- Écran de premier lancement / paramètres (electron/setup.html)
+ipcMain.handle('setup:get', () => ({ config: readConfig(), suggestedDataDir: suggestedDataDir(), version: app.getVersion() }));
+ipcMain.handle('setup:chooseFolder', async (_e, current) => {
+  const r = await dialog.showOpenDialog(win, { title: 'Dossier des données', defaultPath: current || suggestedDataDir(), properties: ['openDirectory', 'createDirectory'] });
+  return r.canceled ? null : r.filePaths[0];
+});
+ipcMain.handle('setup:test', async (_e, url) => {
+  try {
+    const r = await fetch(new URL('/api/version', url), { signal: AbortSignal.timeout(4000) });
+    const v = await r.json();
+    return { ok: true, build: v.build };
+  } catch (e) { return { ok: false, error: String(e?.cause?.code || e?.message || e) }; }
+});
+ipcMain.handle('setup:save', (_e, c) => {
+  saveConfig({ ...readConfig(), ...c });
+  if (c.mode === 'server') app.setLoginItemSettings({ openAtLogin: !!c.autostart, args: ['--hidden'] });
+  else app.setLoginItemSettings({ openAtLogin: false });
+  quitting = true; app.relaunch(); app.exit(0);
+});
+
+app.whenReady().then(async () => {
+  config = readConfig();
+  createWindow();
+  if (!config?.mode) return openSetup();
+  try {
+    if (config.mode === 'server') {
+      process.env.STOCKAV_DATA = config.dataDir || suggestedDataDir(); // lu par server.js au chargement
+      const port = Number(config.port) || 3000;
+      await require('../server.js').start(port);
+      appUrl = `http://localhost:${port}`;
+      createTray(port);
+    } else {
+      appUrl = String(config.serverUrl || '').replace(/\/+$/, '');
+    }
+    win.loadURL(appUrl);
+  } catch (e) {
+    const msg = e.code === 'EADDRINUSE'
+      ? `Le port ${config.port || 3000} est déjà utilisé : l'ancien serveur (fenêtre noire « node server.js ») tourne sans doute encore. Ferme-le, puis relance Stock AV.`
+      : `Le serveur n'a pas pu démarrer : ${e.message}`;
+    openSetup(msg);
+  }
+  checkUpdates();
+  setInterval(() => checkUpdates(), 6 * 3600e3); // le PC serveur reste allumé longtemps : on revérifie toutes les 6 h
+});
+app.on('before-quit', () => { quitting = true; });
+app.on('window-all-closed', () => { if (config?.mode !== 'server') app.quit(); });

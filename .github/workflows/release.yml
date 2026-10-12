@@ -1,0 +1,28 @@
+# Fabrique l'installateur Windows et le publie dans les « Releases » GitHub.
+# Se déclenche quand le numéro de version de package.json change sur la branche principale
+# (ou à la main : onglet Actions → « Publier une version » → Run workflow).
+# Les applications installées voient la nouvelle version au prochain lancement et se mettent à jour.
+name: Publier une version
+
+on:
+  push:
+    branches: [main]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: Fabriquer et publier l'installateur
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
