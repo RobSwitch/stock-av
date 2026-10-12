@@ -248,7 +248,7 @@ function planningData() {
       info: r.info ? JSON.parse(r.info) : null, done: JSON.parse(r.done || '[]'),
     };
   });
-  return { events, offers: offersList(), offerMoves: offerMovesList(), itemMap: metaJson('offer_item_map'), status: beoStatus() };
+  return { events, offers: offersList(), offerMoves: offerMovesList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
 }
 
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -288,32 +288,143 @@ function savePlanningEvent(b) {
 
 // ---- Import du BEO Book (PDF)
 const pdfMapGet = () => { try { return JSON.parse(metaGet('pdf_room_map') || '{}'); } catch { return {}; } };
+// Le PDF est gardé en attente (tmp-…) pendant l'aperçu ; à la validation il est archivé dans
+// fichiers/beo/AAAA - Semaine NN (du JJ-MM au JJ-MM)/ — semaine officielle (lundi → dimanche) du premier jour du BEO Book ;
+// seule la dernière version de la semaine est gardée.
+const BEO_DIR = path.join(DATA_DIR, 'fichiers', 'beo');
+fs.mkdirSync(BEO_DIR, { recursive: true });
+const beoTmp = (token) => {
+  if (!/^[0-9a-f-]{36}$/.test(token || '')) throw new Error('Envoi expiré : choisis à nouveau le BEO Book');
+  return path.join(BEO_DIR, `tmp-${token}.pdf`);
+};
+// semaine officielle (ISO) : clé « AAAA-Wnn » + nom de dossier lisible
+function isoWeek(iso) {
+  const d = new Date(iso + 'T12:00:00Z');
+  const monday = new Date(d); monday.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate() + 6);
+  // ISO 8601 : la semaine appartient à l'année de son jeudi ; semaine 1 = celle qui contient le 4 janvier
+  const thursday = new Date(monday); thursday.setUTCDate(monday.getUTCDate() + 3);
+  const year = thursday.getUTCFullYear();
+  const week = Math.floor(Math.floor((thursday - Date.UTC(year, 0, 1)) / 864e5) / 7) + 1;
+  const dm = (x) => `${String(x.getUTCDate()).padStart(2, '0')}-${String(x.getUTCMonth() + 1).padStart(2, '0')}`;
+  const nn = String(week).padStart(2, '0');
+  return { key: `${year}-W${nn}`, folder: `${year} - Semaine ${nn} (du ${dm(monday)} au ${dm(sunday)})`, label: `semaine ${week} (du ${dm(monday)} au ${dm(sunday)})` };
+}
+// Archive : { weeks: { 'AAAA-Wnn': { folder, label, book: {…} | null, parts: [{…}] } } }
+// book = BEO Book complet de la semaine (dernière version) ; parts = BEO envoyés isolément (dernière version de chaque BEO)
+// chaque fichier : { file, original, imported_at, from, to, beos: ['12345', …] }
+const beoArchive = () => { const a = metaJson('beo_archive'); a.weeks ||= {}; return a; };
+const beoNums = (list) => [...new Set((list || []).map(String))];
+const COLOR_LABEL = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect', '': 'Sans couleur' };
+
 function previewBeoPdf(buf, filename) {
+  if (buf.subarray(0, 5).toString() !== '%PDF-') throw new Error("Ce fichier n'est pas un PDF");
   const locs = db.prepare("SELECT id, name FROM locations WHERE kind='salle'").all();
   const saved = pdfMapGet();
   const r = beopdf.parseBeoBook(buf, beopdf.makeMatcher(locs, saved));
   const nameOf = new Map(locs.map((l) => [l.id, l.name]));
   const existing = planningData().events;
+  const matched = new Set();
   const events = r.events.map((e, i) => {
-    const same = existing.filter((x) => x.date <= e.date && e.date <= x.end_date && x.room_ids.includes(e.room_id));
-    const twin = same.find((x) => beopdf.nz(x.client) === beopdf.nz(e.client));
-    let state = 'new', existing_id = null;
+    const onDay = existing.filter((x) => x.date <= e.date && e.date <= x.end_date);
+    const same = onDay.filter((x) => x.room_ids.includes(e.room_id));
+    // 1) même n° de BEO dans la salle  2) même société dans la salle  3) même n° de BEO ce jour-là, dans une autre salle (salle changée)
+    let twin = same.find((x) => x.info?.beo && x.info.beo === e.beo) || same.find((x) => beopdf.nz(x.client) === beopdf.nz(e.client));
+    let movedFrom = null;
+    if (!twin) {
+      const other = onDay.filter((x) => x.info?.beo && x.info.beo === e.beo && !matched.has(x.id));
+      if (other.length === 1) { twin = other[0]; movedFrom = twin.room_ids.find((id) => !r.events.some((y) => y.beo === e.beo && y.room_id === id)) ?? twin.room_ids[0]; }
+    }
+    let state = 'new', existing_id = null; const changes = [];
     if (twin) {
-      existing_id = twin.id;
-      state = (twin.start || '') === e.start && (twin.end || '') === e.end && (twin.detail || '') === e.detail && (twin.color || '') === e.color ? (twin.info ? 'same' : 'info') : 'differs'; // 'info' : identique, mais les détails du BEO manquent
+      matched.add(twin.id); existing_id = twin.id;
+      const span = (a, b) => `${a || '?'}–${b || '?'}`;
+      if ((twin.start || '') !== e.start || (twin.end || '') !== e.end) changes.push({ what: 'Horaire', from: span(twin.start, twin.end), to: span(e.start, e.end) });
+      // un BEO sans description AV n'efface jamais une description écrite dans le planning
+      if (e.detail && (twin.detail || '') !== e.detail) changes.push({ what: 'Description', from: twin.detail || '—', to: e.detail });
+      // le statut « Prêt » (vert) n'est jamais écrasé par le BEO ; sinon on suit le BEO (Prospect ↔ À préparer)
+      if (twin.color !== 'green' && (twin.color || '') !== e.color) changes.push({ what: 'Statut', from: COLOR_LABEL[twin.color || ''], to: COLOR_LABEL[e.color] });
+      if (beopdf.nz(twin.client) !== beopdf.nz(e.client)) changes.push({ what: 'Société', from: twin.client, to: e.client });
+      if (movedFrom != null) changes.push({ what: 'Salle', from: nameOf.get(movedFrom) || '?', to: nameOf.get(e.room_id) });
+      state = changes.length ? 'differs' : twin.info?.beo ? 'same' : 'info'; // 'info' : identique, mais les détails du BEO manquent
     }
     return {
-      i, ...e, room_name: nameOf.get(e.room_id), state, existing_id,
+      i, ...e, room_name: nameOf.get(e.room_id), state, existing_id, changes, moved_from: movedFrom,
+      was_ready: !!twin && twin.color === 'green', ready_done: twin ? twin.done || [] : [],
       clash: !twin && same.length ? same.map((x) => x.client) : [],
-      selected: (state === 'new' && e.hasAv) || state === 'info',
+      selected: state === 'differs' || state === 'info' || (state === 'new' && e.hasAv),
     };
   });
-  const dates = events.map((e) => e.date).sort();
+  const dates = [...events.map((e) => e.date), ...r.beoList.map((b) => b.date)].filter(Boolean).sort();
+  const from = dates[0] || null, to = dates[dates.length - 1] || null;
+  const inPdf = new Set(r.beoList.map((b) => String(b.number)));
+  const rem = (x) => ({ id: x.id, date: x.date, client: x.client, start: x.start, end: x.end, rooms: x.room_ids.map((id) => nameOf.get(id)), beo: x.info?.beo || null, ready: x.color === 'green' });
+  const notMatched = from ? existing.filter((x) => x.info && x.date >= from && x.date <= to && !matched.has(x.id)) : [];
+  // retirés d'un BEO présent dans ce PDF (salle ou jour supprimé du BEO) : toujours signalés
+  const removed = notMatched.filter((x) => x.info?.beo && inPdf.has(String(x.info.beo))).map(rem);
+  // BEO absents de ce PDF : seulement si c'est le BEO Book complet de la semaine (annulés ?)
+  const absent = notMatched.filter((x) => !(x.info?.beo && inPdf.has(String(x.info.beo)))).map(rem);
+  // BEO Book complet ou BEO isolé(s) ? proposition : complet s'il y a beaucoup de BEO sur plusieurs jours
+  const days = new Set(r.beoList.map((b) => b.date)).size;
+  const kind = r.beoCount >= 6 && days >= 3 ? 'book' : 'parts';
+  // fichier gardé en attente jusqu'à la validation
+  for (const f of fs.readdirSync(BEO_DIR)) { // ménage : aperçus abandonnés depuis plus d'un jour
+    const p = path.join(BEO_DIR, f);
+    if (f.startsWith('tmp-') && Date.now() - fs.statSync(p).mtimeMs > 864e5) fs.rmSync(p, { force: true });
+  }
+  const token = crypto.randomUUID();
+  fs.writeFileSync(beoTmp(token), buf);
+  const wk = from ? isoWeek(from) : null;
+  const w = wk ? beoArchive().weeks[wk.key] : null;
   return {
-    filename, beoCount: r.beoCount, events, warnings: r.warnings,
-    from: dates[0] || null, to: dates[dates.length - 1] || null,
+    token, filename, beoCount: r.beoCount, beoList: r.beoList, events, removed, absent, kind, warnings: r.warnings, from, to,
+    week: wk?.key || null, week_label: wk?.folder || null,
+    replaces_book: w?.book || null, // remplacé si c'est un BEO Book complet
+    replaces_parts: (w?.parts || []).filter((p) => p.beos.some((n) => inPdf.has(n))), // anciennes versions de ces BEO
     unmatched: r.unmatched.map((u) => ({ ...u, key: beopdf.nz(u.name).replace(/\+/g, ''), saved: saved[beopdf.nz(u.name).replace(/\+/g, '')] || [] })),
   };
+}
+
+// Archive le PDF validé dans le dossier de sa semaine, en ne gardant que la dernière version :
+// - BEO Book complet : remplace l'ancien Book de la semaine + les BEO isolés qu'il contient
+// - BEO isolé(s) : remplace seulement les anciennes versions de ces mêmes BEO (le Book de la semaine n'est pas touché)
+function archiveBeo(token, filename, from, to, kind, beos) {
+  const src = beoTmp(token);
+  if (!fs.existsSync(src) || !from) return null;
+  const nums = beoNums(beos);
+  const wk = isoWeek(from);
+  const dir = path.join(BEO_DIR, wk.folder);
+  fs.mkdirSync(dir, { recursive: true });
+  const arch = beoArchive();
+  const w = (arch.weeks[wk.key] ||= { folder: wk.folder, label: wk.label, book: null, parts: [] });
+  const drop = (entry) => { if (entry) fs.rmSync(path.join(BEO_DIR, entry.file), { force: true }); };
+  const safe = (s) => String(s).replace(/[<>:"/\\|?*]/g, '_').trim();
+  let name = safe(path.basename(filename || '') || 'BEO.pdf');
+  if (!/\.pdf$/i.test(name)) name += '.pdf';
+  const now = new Date().toISOString();
+  if (kind === 'book') {
+    drop(w.book);
+    w.parts = w.parts.filter((p) => { const covered = p.beos.every((n) => nums.includes(n)); if (covered) drop(p); return !covered; });
+    name = `BEO Book - ${name}`;
+  } else {
+    w.parts = w.parts.filter((p) => { const old = p.beos.every((n) => nums.includes(n)); if (old) drop(p); return !old; });
+    name = `BEO ${nums.join(', ')} - ${name}`;
+  }
+  // un autre fichier de la semaine porte déjà ce nom : on le distingue
+  if (fs.existsSync(path.join(dir, name))) name = name.replace(/\.pdf$/i, ` (${now.slice(0, 16).replace(/[:T]/g, '-')}).pdf`);
+  fs.renameSync(src, path.join(dir, name));
+  const entry = { file: path.join(wk.folder, name), original: filename || name, imported_at: now, from, to, beos: nums };
+  if (kind === 'book') w.book = entry; else w.parts.push(entry);
+  metaSet('beo_archive', JSON.stringify(arch));
+  return wk.key;
+}
+// Fichier le plus récent qui contient ce n° de BEO (Book ou BEO isolé)
+function beoFileFor(num) {
+  let best = null;
+  for (const w of Object.values(beoArchive().weeks)) for (const e of [w.book, ...w.parts]) {
+    if (e && e.beos.includes(String(num)) && (!best || e.imported_at > best.imported_at)) best = e;
+  }
+  return best;
 }
 
 // ---- Fiches techniques (« Offres ») : le PDF est conservé et affiché dans le planning au jour du montage
@@ -634,27 +745,38 @@ const routes = {
     metaSet('pdf_room_map', JSON.stringify(map));
     return { ok: true };
   },
+  // Validation de l'aperçu : ajouts, mises à jour, retraits choisis, puis archivage du PDF (dernière version de la semaine)
   'POST /api/planning/pdf/import': (b) => {
     const list = Array.isArray(b.events) ? b.events : [];
-    if (!list.length) throw new Error('Aucun événement sélectionné');
-    let added = 0, updated = 0; const skipped = [];
+    const removeIds = (Array.isArray(b.remove_ids) ? b.remove_ids : []).map(Number);
+    if (!list.length && !removeIds.length && !b.token) throw new Error('Aucun événement sélectionné');
+    let added = 0, updated = 0, removed = 0; const skipped = [];
     inTransaction(() => {
       for (const e of list) {
         const old = e.replace_id ? db.prepare('SELECT * FROM planning_events WHERE id=?').get(e.replace_id) : null;
         if (old && e.info_only) { db.prepare('UPDATE planning_events SET info=? WHERE id=?').run(JSON.stringify(e.info), old.id); updated++; continue; }
         const ev = {
           id: old ? old.id : null, date: e.date, end_date: old ? old.end_date : e.date, room_ids: [e.room_id],
-          client: e.client, detail: e.detail, start: e.start, end: e.end, color: e.color,
+          client: e.client, detail: e.detail || (old ? old.detail : '') || '', start: e.start, end: e.end, // description vide dans le BEO : on garde celle du planning
+          color: old && old.color === 'green' ? 'green' : e.color, // un événement « Prêt » le reste
           tags: old ? JSON.parse(old.tags || '[]') : [], urgent: old ? !!old.urgent : false, info: e.info || null,
         };
-        if (old) { ev.room_ids = JSON.parse(old.room_ids || '[]'); if (!ev.room_ids.includes(e.room_id)) ev.room_ids.push(e.room_id); ev.date = old.date; }
+        if (old) {
+          let ids = JSON.parse(old.room_ids || '[]');
+          if (e.moved_from != null) ids = ids.filter((id) => id !== Number(e.moved_from)); // salle changée dans le BEO
+          if (!ids.includes(e.room_id)) ids.push(e.room_id);
+          ev.room_ids = ids; ev.date = old.date;
+        }
         try { upsertPlanningEvent(ev); if (old) updated++; else added++; }
         catch (err) { skipped.push(`${e.client} (${e.date}) : ${err.message}`); }
       }
+      for (const id of removeIds) removed += db.prepare('DELETE FROM planning_events WHERE id=?').run(id).changes;
       bumpPlanning();
     });
-    return { added, updated, skipped, ...planningData() };
+    const week = b.token ? archiveBeo(b.token, b.filename, b.from, b.to, b.kind === 'book' ? 'book' : 'parts', b.beos) : null;
+    return { added, updated, removed, skipped, archived: week, ...planningData() };
   },
+  'GET /api/beo/archive': () => beoArchive(),
   'POST /api/planning/phase': (b) => validatePhase(b),
   'POST /api/planning/phase/undo': (b) => undoPhase(b),
   'POST /api/offers/save': (b) => {
@@ -814,6 +936,15 @@ const server = http.createServer((req, res) => {
     '/api/planning/pdf/preview': (buf, filename) => previewBeoPdf(buf, filename),
     '/api/offers/preview': (buf, filename) => previewOffer(buf, filename),
   };
+  // BEO archivé : /api/beo/w/AAAA-Wnn/pdf (BEO Book de la semaine) ou /api/beo/n/12345/pdf (dernière version de ce BEO)
+  const bp = /^\/api\/beo\/(w|n)\/([\w-]+)\/pdf$/.exec(url.pathname);
+  if (req.method === 'GET' && bp) {
+    const b = bp[1] === 'w' ? beoArchive().weeks[bp[2]]?.book : beoFileFor(bp[2]);
+    const file = b && path.join(BEO_DIR, b.file);
+    if (!b || !file.startsWith(BEO_DIR) || !fs.existsSync(file)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('BEO Book introuvable pour cette semaine'); }
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(b.original || 'BEO Book.pdf')}` });
+    return fs.createReadStream(file).pipe(res);
+  }
   // Affichage du PDF d'une offre dans le navigateur
   const op = /^\/api\/offers\/(\d+)\/pdf$/.exec(url.pathname);
   if (req.method === 'GET' && op) {

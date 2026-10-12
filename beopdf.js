@@ -175,12 +175,14 @@ function parseBeoBook(buf, match) {
         beo: b.number, date: g.date, room_id: g.id, start: g.start, end: g.end,
         client, account: h.account, event_name: h.eventName, status: h.status, color,
         detail, av: items, hasAv: !!a, rows: g.rows,
-        info: { account: h.account, event: h.eventName, rows: g.info },
+        info: { beo: b.number, account: h.account, event: h.eventName, rows: g.info }, // n° de BEO : retrouve l'événement dans une version mise à jour
       });
     }
   }
   events.sort((a, c) => a.date.localeCompare(c.date) || a.room_id - c.room_id || a.start.localeCompare(c.start));
-  return { beoCount: beos.length, events, unmatched: [...unmatched].map(([name, count]) => ({ name, count })).sort((a, c) => c.count - a.count), warnings };
+  // liste des BEO du PDF (un BEO Book complet en contient beaucoup, un envoi isolé un seul ou quelques-uns)
+  const beoList = beos.filter((b) => b.header).map((b) => ({ number: b.number, date: b.header.date, client: [b.header.account, b.header.eventName].filter(Boolean).sort((a, c) => a.length - c.length)[0] || '' }));
+  return { beoCount: beos.length, beoList, events, unmatched: [...unmatched].map(([name, count]) => ({ name, count })).sort((a, c) => c.count - a.count), warnings };
 }
 
 // ---- Correspondance « nom de salle du PDF » → salle(s) de l'application

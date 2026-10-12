@@ -79,6 +79,13 @@
   .theme { margin-left:auto; display:flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px; }
   .theme button { border:0; background:none; color:var(--muted); font:inherit; font-size:12.5px; padding:5px 11px; border-radius:999px; cursor:pointer; }
   .theme button.on { background:var(--card); color:var(--ink); box-shadow:var(--shadow-sm); font-weight:600; }
+  /* écran étroit : le bandeau défile avec la page (sinon il mange la hauteur), onglets plus serrés */
+  @media (max-width: 760px) {
+    header { position:static; padding:8px 12px; gap:10px; }
+    nav button { padding:6px 10px; font-size:13px; }
+    .theme { margin-left:0; }
+    main { padding:0 12px; }
+  }
 
   main { max-width:1100px; margin:22px auto; padding:0 20px; }
   .card { background:var(--card); border:0; border-radius:14px; box-shadow:var(--shadow); padding:18px 20px; margin-bottom:16px; }
@@ -202,6 +209,17 @@
 
   /* ---- Planning : contrôles ---- */
   .plsrc { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .plsrc-info { flex:1 1 240px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13.5px; }
+  .plsrc-btns { display:flex; gap:8px; flex-wrap:wrap; }
+  .plsrc-btns .btn { white-space:nowrap; flex:none; }
+  .btn-count { display:inline-grid; place-items:center; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:rgba(255,255,255,.25); font-size:12px; font-weight:700; }
+  /* écran étroit : l'info passe au-dessus, les boutons se partagent toute la largeur (texte jamais coupé) */
+  @media (max-width: 760px) {
+    .plsrc-info { flex-basis:100%; }
+    .plsrc-when { display:none; }
+    .plsrc-btns { width:100%; }
+    .plsrc-btns .btn { flex:1 1 150px; }
+  }
   .plsrc .info { flex:1; min-width:240px; }
   .plsrc .fname { font-weight:600; }
   .seg { display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:12px; padding:3px; gap:2px; flex-wrap:wrap; }
@@ -213,7 +231,9 @@
   .plbar .plareas button { padding:7px 16px; font-size:14px; }
   .plbar .daychips { flex:1; }
   .plweek { margin-left:auto; font-size:13.5px; font-weight:500; color:var(--muted); white-space:nowrap; display:inline-flex; align-items:center; gap:8px; }
-  .plweek .wk { width:30px; height:30px; display:inline-grid; place-items:center; border:1px solid var(--line); background:var(--card); border-radius:9px; font-size:11px; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
+  .plweek .wk { min-width:30px; height:30px; padding:0 8px; display:inline-grid; place-items:center; white-space:nowrap; border:1px solid var(--line); background:var(--card); border-radius:9px; font-size:11.5px; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
+  /* écran étroit : la barre de la semaine passe à la ligne au lieu de déborder */
+  @media (max-width: 760px) { .plweek { margin-left:0; flex-wrap:wrap; white-space:normal; } .plbar .plareas { width:100%; } }
   .plweek .wk:hover { background:var(--surface-2); }
   .plsize button { padding:4px 10px; font-size:12px; }
 
@@ -260,6 +280,7 @@
   .pc:not(:only-child).yellow { background:var(--amber-soft); box-shadow:inset 4px 0 0 var(--amber); }
   .pc:not(:only-child).split { background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
   .pc + .pc { border-top:1px solid var(--line); }
+  a.btn.small { padding:4px 10px; font-size:12.5px; border-radius:8px; }
   table.pg td.fill { background:var(--card); box-shadow:inset 4px 0 0 var(--line); }
   table.pg td.fill-red { background:var(--red-soft); box-shadow:inset 4px 0 0 var(--red); }
   table.pg td.fill-green { background:var(--green-soft); box-shadow:inset 4px 0 0 var(--green); }
@@ -317,7 +338,7 @@
   table.oft details summary { cursor:pointer; }
   table.oft ul { margin:6px 0 0; padding-left:18px; }
   table.oft input[type=date] { padding:4px 7px; }
-  #ofDlg { overflow-x:hidden; }
+  #ofDlg, #pdfDlg { overflow-x:hidden; }
   .oflist .o { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
 
   /* ---- Planning : vue liste ---- */
@@ -571,8 +592,8 @@
   <p class="muted" id="itDelHint" style="margin:10px 0 0;max-width:340px"></p>
 </dialog>
 <dialog id="pdfDlg">
-  <h2>Importer le BEO Book (PDF)</h2>
-  <div style="width:min(1100px,92vw)">
+  <h2>Importer un BEO Book ou des BEO (PDF)</h2>
+  <div style="width:min(1100px,calc(100vw - 100px))">
     <label>Fichier PDF<input type="file" id="pdfFile" accept=".pdf,application/pdf"></label>
     <p class="warn" id="pdfErr"></p>
     <div id="pdfBody"></div>
@@ -611,6 +632,7 @@
 </dialog>
 <dialog id="evDlg">
   <h2 id="evTitle">Événement</h2>
+  <div id="evBeo" style="margin:-6px 0 12px"></div>
   <div style="display:flex;flex-direction:column;gap:12px;width:min(560px,90vw)">
     <label>Société / client<input id="evClient" autocomplete="off"></label>
     <div class="row">
@@ -1304,7 +1326,7 @@ $('#retGo').onclick = async () => {
 
 // ---- Onglet "Planning BEO" : planning géré directement dans l'application ----
 let _v = 'grid', _dn = 'compact'; try { _v = localStorage.getItem('plView') || 'grid'; _dn = localStorage.getItem('plDensity') || 'compact'; } catch {}
-const PL = { events: [], offers: [], offerMoves: [], itemMap: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+const PL = { events: [], offers: [], offerMoves: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
 const PL_COLOR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
 const AREA_ORDER = ['Oasis (étage -1)', 'Rez-de-chaussée', 'Étage +1', 'Autres espaces'];
@@ -1330,7 +1352,7 @@ async function loadPlanning(quiet) {
   try {
     const before = PL.status.version;
     const r = await api('/api/planning');
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status; PL.loaded = true;
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status; PL.loaded = true;
     renderPlanning();
     renderLieux(); // matériel externe installé (onglet Salles)
     if (quiet && before !== undefined && r.status.version > before) toast('Planning mis à jour par un autre poste ✔');
@@ -1338,9 +1360,24 @@ async function loadPlanning(quiet) {
 }
 
 function planningSourceHtml() {
-  return `<span class="muted" style="flex:1">Planning géré dans l'application.</span>
-    <button class="btn" id="plPdf">📄 Importer le BEO Book (PDF)…</button>
-    <button class="btn teal" id="plOffer">📎 Fiches techniques (offres)${PL.offers.length ? ` · ${PL.offers.length}` : ''}…</button>`;
+  // BEO Book archivé qui couvre la semaine affichée (le plus récent)
+  let bk = null, bkKey = null;
+  if (PL.week) {
+    const days = weekDays(PL.week);
+    for (const [k, w] of Object.entries(PL.beoArchive || {})) {
+      const b = w.book;
+      if (b && b.from <= days[days.length - 1] && b.to >= days[0] && (!bk || b.imported_at > bk.imported_at)) { bk = b; bkKey = k; }
+    }
+  }
+  const when = bk ? new Date(bk.imported_at).toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  const info = bk ? `BEO Book de la semaine : ${bk.original} (importé le ${when})` : 'Aucun BEO Book archivé pour cette semaine';
+  // textes courts, jamais coupés (détail au survol) ; sur petit écran, les boutons passent sur toute la largeur
+  return `<span class="plsrc-info muted" title="${esc(info)}">${bk ? `BEO Book : <b>${esc(bk.original)}</b> <span class="plsrc-when">· ${esc(when)}</span>` : esc(info)}</span>
+    <span class="plsrc-btns">
+      ${bk ? `<a class="btn ghost" href="/api/beo/w/${bkKey}/pdf" target="_blank" rel="noopener" title="Ouvrir le BEO Book de la semaine (PDF)">📄 Voir le BEO Book</a>` : ''}
+      <button class="btn" id="plPdf" title="Importer un BEO Book complet, ou un ou plusieurs BEO (PDF)">⬆ Importer un BEO</button>
+      <button class="btn teal" id="plOffer" title="Fiches techniques (offres) : importer, ouvrir, supprimer">📎 Offres${PL.offers.length ? ` <span class="btn-count">${PL.offers.length}</span>` : ''}</button>
+    </span>`;
 }
 
 function evCard(e) {
@@ -1616,6 +1653,10 @@ function openEvent(ev, pre) {
     return ls.length ? `<div class="fl">${esc(a)}</div>` + ls.map((l) => `<label><input type="checkbox" value="${l.id}" ${sel.has(l.id) ? 'checked' : ''}>${esc(l.name)}</label>`).join('') : '';
   }).join('');
   $('#evRoomsHint').textContent = ev && !ev.room_ids.length && ev.rooms.length ? `(nom d'origine : ${ev.rooms.join(', ')})` : '';
+  // BEO de l'événement (dernière version archivée : BEO isolé ou BEO Book)
+  const beo = ev?.info?.beo;
+  const archived = beo && Object.values(PL.beoArchive || {}).some((w) => [w.book, ...(w.parts || [])].some((x) => x && x.beos.includes(String(beo))));
+  $('#evBeo').innerHTML = beo ? `<span class="muted" style="font-size:13px">BEO n° ${esc(beo)}</span> ${archived ? `<a class="btn small" style="padding:3px 10px;font-size:12.5px" href="/api/beo/n/${encodeURIComponent(beo)}/pdf" target="_blank" rel="noopener">📄 Ouvrir le BEO</a>` : '<span class="muted" style="font-size:12px">(PDF non archivé)</span>'}` : '';
   // phases déjà validées (« Prêt ») : possibilité d'annuler et de remettre le matériel à sa place
   const dn = ev?.done || [];
   $('#evDone').style.display = dn.length ? '' : 'none';
@@ -1658,7 +1699,7 @@ $('#evSave').onclick = async () => {
   }
   try {
     const r = await api('/api/planning/event', body);
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
     $('#evDlg').close(); renderPlanning(); toast('Planning enregistré ✔');
   } catch (err) { $('#evErr').textContent = err.message; }
 };
@@ -1666,7 +1707,7 @@ $('#evDel').onclick = async () => {
   if (!EV.confirmDel) { EV.confirmDel = true; $('#evDel').textContent = 'Confirmer la suppression'; return; }
   try {
     const r = await api('/api/planning/event/delete', { id: EV.id });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
     $('#evDlg').close(); renderPlanning(); toast('Événement supprimé');
   } catch (err) { $('#evErr').textContent = err.message; }
 };
@@ -1861,7 +1902,7 @@ async function submitUndo(move) {
   const lines = move ? PH.rows.filter((r) => r.on && r.qty > 0).map((r) => ({ item_id: r.item, qty: Math.min(r.qty, r.max), from: r.from, to: r.to })) : [];
   try {
     const r = await api('/api/planning/phase/undo', { event: PH.body, phase: PH.phase, lines });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
     await load();
     $('#phDlg').close(); renderPlanning();
     toast(`${PH.phase} annulé ✔${r.moved ? ` — ${r.moved} pièce${r.moved > 1 ? 's' : ''} remise${r.moved > 1 ? 's' : ''} en place` : ''}`);
@@ -1903,7 +1944,7 @@ async function submitPhase(move) {
   try {
     const external = PH.ext.filter((x) => x.on).map(({ qty, name, supplier, offer_id, room_name, room_ids }) => ({ qty, name, supplier, offer_id, room_name, room_ids }));
     const r = await api('/api/planning/phase', { event: PH.body, phase: PH.phase, lines, external });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
     await load(); // stock mis à jour (inventaire, salles)
     $('#phDlg').close(); renderPlanning();
     const left = PHASES.filter((p) => PH.todo.includes(p) && p !== PH.phase);
@@ -1914,9 +1955,16 @@ $('#phGo').onclick = () => (PH.mode === 'undo' ? submitUndo(true) : submitPhase(
 $('#phNoMove').onclick = () => (PH.mode === 'undo' ? submitUndo(false) : submitPhase(false));
 
 // ----- Import du BEO Book (PDF) : lecture, aperçu, puis création des événements
-const PDFI = { file: null, data: null, sel: new Set() };
+const PDFI = { file: null, data: null, sel: new Set(), rm: new Set(), kind: 'book' };
 $('#plSource').addEventListener('click', (e) => {
-  if (e.target.closest('#plPdf')) { PDFI.file = null; PDFI.data = null; $('#pdfFile').value = ''; $('#pdfErr').textContent = ''; $('#pdfBody').innerHTML = '<p class="muted">Choisis le PDF du BEO Book : l\'application lit chaque BEO (société, date, statut, salles, matériel AV) et te montre ce qu\'elle va créer <b>avant</b> d\'importer.</p>'; $('#pdfGo').disabled = true; $('#pdfCount').textContent = ''; $('#pdfDlg').showModal(); }
+  if (e.target.closest('#plPdf')) {
+    PDFI.file = null; PDFI.data = null; $('#pdfFile').value = ''; $('#pdfErr').textContent = '';
+    $('#pdfBody').innerHTML = `<p class="muted">Choisis un PDF : le <b>BEO Book</b> complet de la semaine, ou <b>un ou plusieurs BEO</b> isolés (une société, une journée).
+      L'application le compare au planning et te montre <b>tout ce qui change</b> : <b>rien n'est modifié tant que tu n'as pas validé</b>.
+      Le PDF est ensuite archivé dans le dossier de sa semaine, en ne gardant que la dernière version
+      (un BEO isolé ne remplace jamais le BEO Book, seulement l'ancienne version de ce même BEO).</p>`;
+    $('#pdfGo').disabled = true; $('#pdfCount').textContent = ''; $('#pdfDlg').showModal();
+  }
 });
 $('#pdfClose').onclick = () => $('#pdfDlg').close();
 
@@ -1927,7 +1975,7 @@ async function pdfPreview() {
     const r = await fetch('/api/planning/pdf/preview', { method: 'POST', headers: { 'X-Filename': encodeURIComponent(PDFI.file.name) }, body: PDFI.file });
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || 'Erreur');
-    PDFI.data = j; PDFI.sel = new Set(j.events.filter((e) => e.selected).map((e) => e.i));
+    PDFI.data = j; PDFI.sel = new Set(j.events.filter((e) => e.selected).map((e) => e.i)); PDFI.rm = new Set(); PDFI.kind = j.kind;
     renderPdf();
   } catch (err) { $('#pdfBody').innerHTML = ''; $('#pdfErr').textContent = err.message; $('#pdfGo').disabled = true; }
 }
@@ -1940,14 +1988,27 @@ function roomPicker(key) {
   }).join('');
 }
 
+// Aperçu d'un BEO Book : comparaison avec le planning, rien n'est modifié avant « Valider »
 function renderPdf() {
   const d = PDFI.data;
-  const stLabel = { new: 'Nouveau', same: 'Déjà présent', differs: 'Différent', info: 'Infos BEO à ajouter' };
-  const byDate = {};
-  d.events.forEach((e) => (byDate[e.date] ||= []).push(e));
-  const nAv = d.events.filter((e) => e.hasAv).length;
-  let html = `<p><b>${d.beoCount} BEO</b> lus dans « ${esc(d.filename)} » : <b>${d.events.length}</b> salles de l'application concernées, dont ${nAv} avec une section matériel AV` +
-    (d.from ? ` (du ${dayLabel(d.from)} au ${dayLabel(d.to)})` : '') + '.</p>';
+  const mod = d.events.filter((e) => e.state === 'differs'), nouv = d.events.filter((e) => e.state === 'new');
+  const same = d.events.filter((e) => e.state === 'same' || e.state === 'info');
+  const book = PDFI.kind === 'book';
+  // disparus : ceux d'un BEO présent dans ce PDF ; + les BEO absents seulement si c'est le BEO Book complet
+  const gone = [...d.removed, ...(book ? d.absent : [])];
+  const fmtTs = (s) => new Date(s).toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const beoNames = d.beoList.slice(0, 4).map((b) => `n° ${b.number}${b.client ? ' ' + b.client : ''}`).join(', ') + (d.beoList.length > 4 ? '…' : '');
+  let html = `<p style="margin:4px 0 8px"><b>${d.beoCount} BEO</b> lu${d.beoCount > 1 ? 's' : ''} dans « ${esc(d.filename)} »${d.from ? `, du ${dayLabel(d.from)} au ${dayLabel(d.to)}` : ''}${d.beoCount <= 4 ? ` <span class="muted">(${esc(beoNames)})</span>` : ''}.</p>
+    <div class="row" style="gap:10px;align-items:center;margin-bottom:8px"><span class="muted" style="font-size:13px">Ce PDF est :</span>
+      <div class="seg" id="pdfKind"><button type="button" data-kind="book" class="${book ? 'active' : ''}">le BEO Book complet de la semaine</button><button type="button" data-kind="parts" class="${book ? '' : 'active'}">un ou plusieurs BEO isolés</button></div></div>
+    <div class="row" style="gap:8px;align-items:center;margin-bottom:6px">
+      <span class="pill differs">${mod.length} modifié${mod.length > 1 ? 's' : ''}</span><span class="pill new">${nouv.length} nouveau${nouv.length > 1 ? 'x' : ''}</span>
+      <span class="pill red">${gone.length} disparu${gone.length > 1 ? 's' : ''}</span><span class="pill same">${same.length} inchangé${same.length > 1 ? 's' : ''}</span></div>`;
+  if (d.week) {
+    const repl = book ? [d.replaces_book, ...d.replaces_parts.filter((p) => p.beos.every((n) => d.beoList.some((b) => String(b.number) === n)))].filter(Boolean)
+      : d.replaces_parts.filter((p) => p.beos.every((n) => d.beoList.some((b) => String(b.number) === n)));
+    html += `<p class="muted" style="font-size:13px;margin:4px 0">📁 Sera archivé dans <b>« ${esc(d.week_label)} »</b>${repl.length ? ` et <b>remplacera</b> ${repl.map((x) => `« ${esc(x.original)} » (importé le ${esc(fmtTs(x.imported_at))})`).join(', ')}` : ''}${book ? '' : ' — le BEO Book de la semaine n\'est pas touché'}.</p>`;
+  }
   if (d.warnings.length) html += `<div class="plwarn">${[...new Set(d.warnings)].slice(0, 6).map(esc).join('<br>')}</div>`;
   if (d.unmatched.length) {
     html += `<details class="unm"><summary><b>${d.unmatched.length} noms de salles non reconnus</b> (ignorés) — clique pour les associer à une salle de l'application</summary>` +
@@ -1955,39 +2016,80 @@ function renderPdf() {
         <button type="button" class="btn ghost" data-pick="1" style="padding:2px 10px">Associer…</button>${u.saved.length ? `<span class="muted">→ ${u.saved.map(locName).map(esc).join(', ')}</span>` : ''}
         <div class="pick evrooms" style="display:none">${roomPicker(u.key)}<div style="margin-top:6px"><button type="button" class="btn" data-savemap="1" style="padding:3px 12px">Enregistrer</button></div></div></div>`).join('') + '</details>';
   }
-  html += `<div class="row" style="margin-top:10px;font-size:13px"><button type="button" class="btn ghost" data-selall="1" style="padding:3px 10px">Tout cocher</button>
-    <button type="button" class="btn ghost" data-selnone="1" style="padding:3px 10px">Tout décocher</button>
-    <button type="button" class="btn ghost" data-selav="1" style="padding:3px 10px">Seulement avec matériel AV</button></div>`;
-  html += '<div class="pdfwrap"><table class="pdft"><thead><tr><th></th><th>Salle</th><th>Société</th><th>Horaire</th><th>Description</th><th>Statut</th><th>État</th></tr></thead><tbody>';
-  for (const day of Object.keys(byDate).sort()) {
-    html += `<tr class="dh"><td colspan="7">${dayLabel(day, true)}</td></tr>`;
-    for (const e of byDate[day]) {
-      const tip = [`BEO ${e.beo}`, `Compte : ${e.account}`, e.event_name ? `Événement : ${e.event_name}` : '', e.av.length ? 'AV : ' + e.av.join(', ') : 'Aucun matériel AV dans le BEO', e.clash.length ? 'Déjà dans cette salle ce jour-là : ' + e.clash.join(', ') : ''].filter(Boolean).join('\n');
-      html += `<tr class="${e.hasAv ? '' : 'noav'}" title="${esc(tip)}"><td><input type="checkbox" data-i="${e.i}" ${PDFI.sel.has(e.i) ? 'checked' : ''}></td>
-        <td>${esc(e.room_name)}</td><td><b>${esc(e.client)}</b>${e.clash.length ? ' <span class="muted" title="autre événement déjà dans cette salle">⚠</span>' : ''}</td>
-        <td>${esc(e.start)}–${esc(e.end)}</td><td>${e.detail ? esc(e.detail) : '<span class="muted">' + (e.hasAv ? '—' : 'pas de matériel AV') + '</span>'}</td>
-        <td><span class="pill ${e.color}">${e.color === 'yellow' ? 'Prospect' : 'À préparer'}</span> <span class="muted">${esc(e.status)}</span></td>
-        <td><span class="pill ${e.state}">${stLabel[e.state]}</span></td></tr>`;
-    }
+  const tipOf = (e) => [`BEO ${e.beo}`, `Compte : ${e.account}`, e.event_name ? `Événement : ${e.event_name}` : '', e.av.length ? 'AV : ' + e.av.join(', ') : 'Aucun matériel AV dans le BEO', e.clash.length ? 'Déjà dans cette salle ce jour-là : ' + e.clash.join(', ') : ''].filter(Boolean).join('\n');
+  const chk = (e) => `<input type="checkbox" data-i="${e.i}" ${PDFI.sel.has(e.i) ? 'checked' : ''}>`;
+  const day = (s) => `<span style="white-space:nowrap;text-transform:capitalize">${esc(dayLabel(s))}</span>`;
+  // 1) modifications : ce qui change, avant → après (cochées : à valider)
+  if (mod.length) {
+    html += `<h3 style="margin:16px 0 4px;font-size:15px">Modifications <span class="muted" style="font-weight:500;font-size:13px">— cochées : l'événement du planning sera mis à jour</span></h3>
+      <div class="pdfwrap" style="max-height:32vh;margin-top:6px"><table class="pdft"><thead><tr><th></th><th>Jour</th><th>Salle</th><th>Société</th><th>Ce qui change</th></tr></thead><tbody>` +
+      mod.map((e) => `<tr title="${esc(tipOf(e))}"><td>${chk(e)}</td><td>${day(e.date)}</td><td>${esc(e.room_name)}</td><td><b>${esc(e.client)}</b></td>
+        <td>${e.changes.map((c) => `<div><span class="muted">${esc(c.what)} :</span> <s class="muted">${esc(c.from)}</s> → <b>${esc(c.to)}</b></div>`).join('')}
+        ${e.was_ready ? `<div class="pill yellow" style="margin-top:3px">⚠ déjà « Prêt »${e.ready_done.length ? ` (${esc(e.ready_done.join(' + '))} validé)` : ''} : reste Prêt, vérifie le matériel</div>` : ''}</td></tr>`).join('') +
+      '</tbody></table></div>';
   }
-  html += '</tbody></table></div>';
+  // 2) nouveaux événements
+  if (nouv.length) {
+    html += `<h3 style="margin:16px 0 4px;font-size:15px">Nouveaux <span class="muted" style="font-weight:500;font-size:13px">— cochés : ajoutés au planning</span></h3>
+      <div class="row" style="font-size:13px;gap:6px"><button type="button" class="btn ghost small" data-selall="1">Tout cocher</button>
+      <button type="button" class="btn ghost small" data-selnone="1">Tout décocher</button><button type="button" class="btn ghost small" data-selav="1">Seulement avec matériel AV</button></div>
+      <div class="pdfwrap" style="max-height:32vh;margin-top:6px"><table class="pdft"><thead><tr><th></th><th>Jour</th><th>Salle</th><th>Société</th><th>Horaire</th><th>Description</th><th>Statut</th></tr></thead><tbody>` +
+      nouv.map((e) => `<tr class="${e.hasAv ? '' : 'noav'}" title="${esc(tipOf(e))}"><td>${chk(e)}</td><td>${day(e.date)}</td><td>${esc(e.room_name)}</td>
+        <td><b>${esc(e.client)}</b>${e.clash.length ? ' <span class="muted" title="autre événement déjà dans cette salle">⚠</span>' : ''}</td>
+        <td>${esc(e.start)}–${esc(e.end)}</td><td>${e.detail ? esc(e.detail) : '<span class="muted">' + (e.hasAv ? '—' : 'pas de matériel AV') + '</span>'}</td>
+        <td><span class="pill ${e.color}">${e.color === 'yellow' ? 'Prospect' : 'À préparer'}</span></td></tr>`).join('') +
+      '</tbody></table></div>';
+  }
+  // 3) disparus : jamais retirés sans ton accord
+  if (gone.length) {
+    html += `<h3 style="margin:16px 0 4px;font-size:15px">${book ? 'Absents du nouveau BEO Book' : 'Retirés de ces BEO'} <span class="muted" style="font-weight:500;font-size:13px">— annulés ou déplacés ? Coche ceux à retirer du planning</span></h3>
+      <div class="pdfwrap" style="max-height:26vh;margin-top:6px"><table class="pdft"><thead><tr><th>Retirer</th><th>Jour</th><th>Salle(s)</th><th>Société</th><th>Horaire</th></tr></thead><tbody>` +
+      gone.map((x) => `<tr><td><input type="checkbox" data-rm="${x.id}" ${PDFI.rm.has(x.id) ? 'checked' : ''}></td><td>${day(x.date)}</td><td>${esc(x.rooms.join(', '))}</td>
+        <td><b>${esc(x.client)}</b>${x.ready ? ' <span class="pill yellow">Prêt</span>' : ''}</td><td>${esc(x.start || '')}–${esc(x.end || '')}</td></tr>`).join('') +
+      '</tbody></table></div>';
+  }
+  // 4) inchangés (repliés)
+  if (same.length) {
+    html += `<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:600">${same.length} événement${same.length > 1 ? 's' : ''} inchangé${same.length > 1 ? 's' : ''} <span class="muted" style="font-weight:400">(rien à faire)</span></summary>
+      <div class="pdfwrap" style="max-height:26vh"><table class="pdft"><tbody>` +
+      same.map((e) => `<tr><td>${day(e.date)}</td><td>${esc(e.room_name)}</td><td><b>${esc(e.client)}</b></td><td>${esc(e.start)}–${esc(e.end)}</td><td>${esc(e.detail || '')}</td></tr>`).join('') +
+      '</tbody></table></div></details>';
+  }
+  if (!mod.length && !nouv.length && !gone.length) html += `<div class="plwarn" style="margin-top:12px">Aucun changement par rapport au planning : tu peux simplement archiver ce PDF.</div>`;
   $('#pdfBody').innerHTML = html;
   updPdfCount();
 }
 function updPdfCount() {
-  const n = PDFI.sel.size;
-  $('#pdfCount').textContent = `${n} événement${n > 1 ? 's' : ''} coché${n > 1 ? 's' : ''}`;
-  $('#pdfGo').disabled = !n; $('#pdfGo').textContent = n ? `Importer ${n} événement${n > 1 ? 's' : ''}` : 'Importer';
+  const d = PDFI.data; if (!d) return;
+  const sel = d.events.filter((e) => PDFI.sel.has(e.i));
+  const add = sel.filter((e) => e.state === 'new').length, upd = sel.filter((e) => e.state === 'differs').length, rm = PDFI.rm.size;
+  const parts = [add && `${add} ajout${add > 1 ? 's' : ''}`, upd && `${upd} mise${upd > 1 ? 's' : ''} à jour`, rm && `${rm} retrait${rm > 1 ? 's' : ''}`].filter(Boolean);
+  $('#pdfCount').textContent = parts.length ? 'À valider : ' + parts.join(', ') : 'Aucune modification du planning';
+  $('#pdfGo').disabled = false;
+  const what = PDFI.kind === 'book' ? 'le BEO Book' : d.beoCount > 1 ? 'les BEO' : 'le BEO';
+  $('#pdfGo').textContent = parts.length ? `Valider et archiver ${what}` : `Archiver ${what}`;
 }
 $('#pdfBody').addEventListener('change', (e) => {
+  const r = e.target.closest('[data-rm]');
+  if (r) { const id = Number(r.dataset.rm); if (r.checked) PDFI.rm.add(id); else PDFI.rm.delete(id); return updPdfCount(); }
   const c = e.target.closest('[data-i]'); if (!c) return;
   const i = Number(c.dataset.i); if (c.checked) PDFI.sel.add(i); else PDFI.sel.delete(i); updPdfCount();
 });
 $('#pdfBody').addEventListener('click', async (e) => {
   const d = PDFI.data; if (!d) return;
-  if (e.target.closest('[data-selall]')) PDFI.sel = new Set(d.events.map((x) => x.i));
-  else if (e.target.closest('[data-selnone]')) PDFI.sel = new Set();
-  else if (e.target.closest('[data-selav]')) PDFI.sel = new Set(d.events.filter((x) => x.hasAv).map((x) => x.i));
+  // BEO Book complet / BEO isolés : change la liste des « disparus » et l'archivage
+  const kb = e.target.closest('[data-kind]');
+  if (kb) {
+    PDFI.kind = kb.dataset.kind;
+    if (PDFI.kind !== 'book') { const keepIds = new Set(d.removed.map((x) => x.id)); PDFI.rm = new Set([...PDFI.rm].filter((id) => keepIds.has(id))); }
+    return renderPdf();
+  }
+  // boutons de sélection : ne touchent qu'aux nouveaux (les modifications gardent leur coche)
+  const keep = d.events.filter((x) => x.state !== 'new' && PDFI.sel.has(x.i)).map((x) => x.i);
+  const nouv = d.events.filter((x) => x.state === 'new');
+  if (e.target.closest('[data-selall]')) PDFI.sel = new Set([...keep, ...nouv.map((x) => x.i)]);
+  else if (e.target.closest('[data-selnone]')) PDFI.sel = new Set(keep);
+  else if (e.target.closest('[data-selav]')) PDFI.sel = new Set([...keep, ...nouv.filter((x) => x.hasAv).map((x) => x.i)]);
   else if (e.target.closest('[data-pick]')) { const p = e.target.closest('.u').querySelector('.pick'); p.style.display = p.style.display === 'none' ? '' : 'none'; return; }
   else if (e.target.closest('[data-savemap]')) {
     const u = e.target.closest('.u');
@@ -2002,15 +2104,17 @@ $('#pdfBody').addEventListener('click', async (e) => {
 $('#pdfGo').onclick = async () => {
   const d = PDFI.data; if (!d) return;
   $('#pdfErr').textContent = '';
-  const events = d.events.filter((e) => PDFI.sel.has(e.i)).map((e) => ({ date: e.date, room_id: e.room_id, start: e.start, end: e.end, client: e.client, detail: e.detail, color: e.color, info: e.info, replace_id: e.state === 'differs' || e.state === 'info' ? e.existing_id : null, info_only: e.state === 'info' }));
+  const events = d.events.filter((e) => PDFI.sel.has(e.i)).map((e) => ({ date: e.date, room_id: e.room_id, start: e.start, end: e.end, client: e.client, detail: e.detail, color: e.color, info: e.info, moved_from: e.moved_from, replace_id: e.state === 'differs' || e.state === 'info' ? e.existing_id : null, info_only: e.state === 'info' }));
   try {
-    const r = await api('/api/planning/pdf/import', { events });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
-    const ds = events.map((e) => e.date).sort(); const td = isoToday();
-    PL.week = weekStart(ds[0] <= td && td <= ds[ds.length - 1] ? td : ds[0]);
+    const r = await api('/api/planning/pdf/import', { events, remove_ids: [...PDFI.rm], token: d.token, filename: d.filename, from: d.from, to: d.to,
+      kind: PDFI.kind, beos: d.beoList.map((b) => String(b.number)) });
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    const td = isoToday();
+    if (d.from) PL.week = weekStart(d.from <= td && td <= d.to ? td : d.from);
     renderPlanning();
     if (r.skipped.length) { $('#pdfErr').textContent = `${r.added + r.updated} importés, ${r.skipped.length} ignorés : ${r.skipped.slice(0, 3).join(' ; ')}`; return; }
-    $('#pdfDlg').close(); toast(`BEO Book importé ✔ (${r.added} ajouté${r.added > 1 ? 's' : ''}${r.updated ? `, ${r.updated} mis à jour` : ''})`);
+    const parts = [r.added && `${r.added} ajouté${r.added > 1 ? 's' : ''}`, r.updated && `${r.updated} mis à jour`, r.removed && `${r.removed} retiré${r.removed > 1 ? 's' : ''}`].filter(Boolean);
+    $('#pdfDlg').close(); toast(`${PDFI.kind === 'book' ? 'BEO Book' : 'BEO'} ${r.archived ? 'archivé' : 'importé'} ✔${parts.length ? ' — ' + parts.join(', ') : ''}`);
   } catch (err) { $('#pdfErr').textContent = err.message; }
 };
 
@@ -2105,7 +2209,7 @@ $('#ofBody').addEventListener('click', async (e) => {
     if (OF.confirmDel !== id) { OF.confirmDel = id; renderOfList(); return; }
     try {
       const r = await api('/api/offers/delete', { id });
-      PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+      PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
       OF.confirmDel = null; renderOfList(); renderPlanning(); toast('Offre supprimée');
     } catch (err) { $('#ofErr').textContent = err.message; }
     return;
@@ -2143,7 +2247,7 @@ $('#ofSave').onclick = async () => {
       token: d.token, filename: d.filename, client: $('#ofClient').value, version: d.version || '', title: d.title || '', dated: d.dated || '',
       rooms: d.rooms, services: d.services || [], replace_ids: $('#ofReplace')?.checked ? d.replaces.map((o) => o.id) : [],
     });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.status = r.status;
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
     const first = d.rooms.filter((x) => x.setup && !x.skip).map((x) => x.setup).sort()[0];
     if (first) { PL.week = weekStart(first); PL.day = first; }
     $('#ofDlg').close(); renderPlanning();
