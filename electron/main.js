@@ -42,7 +42,8 @@ function createWindow() {
   win.once('ready-to-show', () => { if (!startHidden) { win.maximize(); win.show(); } });
   // liens externes (PDF des offres…) : dans une fenêtre de l'app ; autres sites : navigateur
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (appUrl && url.startsWith(appUrl)) return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true } };
+    if (appUrl && url.startsWith(appUrl)) return { action: 'allow', overrideBrowserWindowOptions: { icon: ICON, autoHideMenuBar: true, width: 1300, height: 900,
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } } }; // fiche du jour : « Enregistrer en PDF »
     shell.openExternal(url); return { action: 'deny' };
   });
   win.webContents.on('did-fail-load', (_e, code, desc, url) => {
@@ -137,6 +138,17 @@ autoUpdater.on('update-downloaded', async (info) => {
     detail: config?.mode === 'server' ? 'Le serveur sera coupé quelques secondes pendant le redémarrage.' : 'Elle sera installée au prochain lancement si tu choisis « Plus tard ».',
   });
   if (response === 0) { quitting = true; autoUpdater.quitAndInstall(); }
+});
+
+// ---- Fiche du jour : la page affichée est enregistrée en PDF (A4 paysage) puis ouverte
+ipcMain.handle('page:savePdf', async (e, name) => {
+  const data = await e.sender.printToPDF({ landscape: true, pageSize: 'A4', printBackground: true, preferCSSPageSize: true, margins: { marginType: 'none' } });
+  const dir = path.join(app.getPath('documents'), 'Dolce AV - Fiches du jour');
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, String(name).replace(/[<>:"/\\|?*]/g, '_').replace(/(\.pdf)?$/i, '.pdf'));
+  fs.writeFileSync(file, data);
+  shell.openPath(file);
+  return file;
 });
 
 // ---- Écran de premier lancement / paramètres (electron/setup.html)

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dolce AV — Fiche du jour</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<style>
+  /* Fiche du jour : A4 paysage, pliable en deux (gauche : Oasis + Rez-de-chaussée ; droite : Étage +1 + Autres) — notes en bas de chaque moitié */
+  @page { size: A4 landscape; margin: 0; }
+  :root { --ink:#1d1f27; --muted:#6c6f7d; --line:#d9d4ce; --soft:#f6f4f1; --accent:#a6192e; --red:#d64045; --green:#2f9e66; --blue:#2a4bb0; --orange:#b05a12; --fs:10.5px; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; background:#e9e6e2; color:var(--ink); font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+
+  /* barre d'outils (écran seulement) */
+  .tools { position:sticky; top:0; z-index:5; display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:10px 16px; background:#fff; border-bottom:1px solid #ece7e2; box-shadow:0 2px 10px rgba(0,0,0,.05); }
+  .tools img { width:34px; }
+  .tools b { font-size:16px; }
+  .tools input { font:inherit; padding:6px 9px; border:1px solid #ece7e2; border-radius:8px; }
+  .tools button { font:inherit; font-weight:600; padding:7px 14px; border-radius:9px; border:1px solid #ece7e2; background:#fff; cursor:pointer; white-space:nowrap; }
+  .tools button.main { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .tools .muted { color:var(--muted); font-size:13px; }
+  .tools .sp { flex:1; }
+
+  /* la feuille */
+  .sheet { width:297mm; height:210mm; margin:16px auto; background:#fff; box-shadow:0 6px 30px rgba(0,0,0,.15); display:grid; grid-template-columns:1fr 1fr; position:relative; overflow:hidden; font-size:var(--fs); line-height:1.32; }
+  .half { padding:8mm 9mm 7mm; display:flex; flex-direction:column; min-height:0; overflow:hidden; }
+  .half + .half { border-left:1px dashed #c9c3bc; }
+  .fold { position:absolute; left:50%; top:2mm; transform:translateX(-50%); font-size:7px; color:#b7b0a8; background:#fff; padding:0 4px; letter-spacing:.08em; }
+
+  .head { display:flex; align-items:center; gap:3mm; padding-bottom:2.5mm; border-bottom:2px solid var(--accent); margin-bottom:3mm; }
+  .head img { width:9mm; }
+  .head .t { font-weight:800; font-size:1.45em; line-height:1.1; }
+  .head .d { color:var(--muted); font-size:.95em; }
+  .head .side { margin-left:auto; text-align:right; font-size:.9em; color:var(--muted); }
+  .head .side b { color:var(--ink); }
+
+  /* espacements en « em » : quand le texte rétrécit pour tenir sur une page, tout rétrécit avec lui */
+  .sec { margin-bottom:.9em; }
+  .sec-t { display:flex; align-items:baseline; gap:.7em; font-weight:800; font-size:1.15em; margin:0 0 .45em; }
+  .sec-t .tag { font-size:.72em; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#fff; background:var(--accent); padding:.1em .6em; border-radius:.3em; }
+  .sec.today .sec-t .tag { background:var(--muted); }
+  .sec.today { font-size:.92em; }
+  .floor { font-size:.78em; font-weight:800; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:.8em 0 .35em; border-bottom:1px solid var(--line); padding-bottom:.15em; }
+  .room { display:grid; grid-template-columns:8.8em 1fr; gap:.7em; padding:.42em 0; border-bottom:1px dotted var(--line); break-inside:avoid; }
+  .room:last-child { border-bottom:0; }
+  .rname { font-weight:800; }
+  .task { display:grid; grid-template-columns:1.25em 1fr; gap:.5em; align-items:start; }
+  .task + .task { margin-top:.4em; }
+  .box { width:1.1em; height:1.1em; border:1.4px solid var(--ink); border-radius:.22em; margin-top:.12em; }
+  .since { color:var(--muted); font-size:.85em; font-style:italic; margin-left:.4em; }
+  .l1 { font-weight:600; }
+  .l1 .time { font-variant-numeric:tabular-nums; font-weight:800; margin-right:1.2mm; }
+  .l1 .av { color:var(--accent); font-weight:700; }
+  .chip { display:inline-block; font-size:.78em; font-weight:800; padding:0 1.4mm; border-radius:1mm; margin-left:1mm; vertical-align:.08em; border:1px solid currentColor; }
+  .chip.m { color:var(--blue); } .chip.s { color:#6b3fc4; } .chip.d { color:var(--orange); } .chip.ok { color:var(--green); } .chip.pr { color:#8a5a00; }
+  .l2 { color:var(--muted); font-size:.9em; }
+  .l2 b { color:var(--ink); font-weight:700; }
+  .dolce { color:var(--orange); font-weight:700; }
+  .none { color:var(--muted); font-style:italic; padding:1mm 0; }
+
+  /* notes : lignes jusqu'en bas de la moitié droite */
+  .notes { flex:1; min-height:9em; margin-top:.6em; border:1px solid var(--line); border-radius:1.5mm; padding:1.5mm 3mm; display:flex; flex-direction:column; }
+  .notes .nt { font-weight:800; font-size:.85em; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+  .notes .lines { flex:1; background:repeating-linear-gradient(to bottom, transparent 0, transparent 6.4mm, #d9d4ce 6.4mm, #d9d4ce calc(6.4mm + 1px)); }
+  .foot { font-size:.75em; color:#a19a92; margin-top:1.5mm; display:flex; justify-content:space-between; }
+
+  @media print {
+    html, body { background:#fff; }
+    .tools, .fit-warn { display:none !important; }
+    .sheet { margin:0; box-shadow:none; }
+  }
+  .fit-warn { max-width:297mm; margin:0 auto; color:#8a5a00; background:#fff4d6; padding:6px 12px; border-radius:8px; font-size:13px; display:none; }
+</style>
+</head>
+<body>
+<div class="tools">
+  <img src="/mascotte/normal.svg" alt=""><b>Fiche du jour</b>
+  <label class="muted">Préparation du <input type="date" id="day"></label>
+  <span class="muted" id="sub"></span>
+  <span class="sp"></span>
+  <button id="prev" title="Jour précédent">◀</button><button id="today">Aujourd'hui</button><button id="next" title="Jour suivant">▶</button>
+  <button class="main" id="pdf">Enregistrer en PDF</button>
+  <button id="print">Imprimer</button>
+</div>
+<p class="fit-warn" id="fitWarn"></p>
+<div class="sheet" id="sheet"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const pad2 = (n) => String(n).padStart(2, '0');
+const isoOf = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const toDate = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(y, m - 1, d); };
+const addDays = (iso, n) => { const d = toDate(iso); d.setDate(d.getDate() + n); return isoOf(d); };
+const longDay = (iso) => toDate(iso).toLocaleDateString('fr-BE', { weekday: 'long', day: '2-digit', month: '2-digit' });
+const norm = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+const CLIENT_STOP = new Set(['the', 'and', 'des', 'les', 'group', 'groupe', 'meeting', 'meetings', 'event', 'events', 'international', 'europe', 'european', 'belgium', 'belgique', 'company', 'sprl', 'srl', 'asbl']);
+const words = (s) => norm(String(s || '').replace(/\([^)]*\)/g, ' ')).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CLIENT_STOP.has(w));
+const sameClient = (a, b) => { const k = (s) => norm(s).replace(/[^a-z0-9]/g, ''); if (k(a) && k(a) === k(b)) return true; const wb = new Set(words(b)); return words(a).some((w) => wb.has(w)); };
+const PHASES = ['Montage', 'Démontage'];
+const AREAS = [['Oasis (étage −1)', (f) => f === -1], ['Rez-de-chaussée', (f) => f === 0], ['Étage +1', (f) => f === 1], ['Autres espaces', (f) => f !== -1 && f !== 0 && f !== 1]];
+
+let DATA = null;
+const params = new URLSearchParams(location.search);
+$('#day').value = params.get('date') || isoOf(new Date());
+
+async function load() {
+  const [pl, d] = await Promise.all([fetch('/api/planning').then((r) => r.json()), fetch('/api/data').then((r) => r.json())]);
+  DATA = { ...pl, locations: d.locations };
+  render();
+}
+
+// tâches d'un jour : événements encore « À préparer » (rouge) ou avec un montage / démontage pas encore validé
+function tasksOn(day) {
+  return DATA.events.filter((e) => e.date <= day && day <= e.end_date && e.room_ids.length)
+    .filter((e) => e.color === 'red' || (e.color !== 'green' && e.tags.some((t) => PHASES.includes(t) && !(e.done || []).includes(t))));
+}
+// fiche(s) technique(s) liée(s) : matériel Dolce à amener et sociétés externes
+function offerInfo(e) {
+  const out = { dolce: [], ext: {} };
+  for (const o of DATA.offers) for (const r of o.rooms) {
+    if (!sameClient(e.client, o.client) || !r.room_ids.some((id) => e.room_ids.includes(id))) continue;
+    for (const it of r.items || []) {
+      if (it.kind === 'dolce') out.dolce.push(`${it.qty} × ${it.name}`);
+      else if (it.kind === 'externe') out.ext[it.supplier] = (out.ext[it.supplier] || 0) + 1;
+    }
+  }
+  out.dolce = [...new Set(out.dolce)];
+  return out;
+}
+// mise en place et nombre de personnes (lignes du BEO)
+function beoInfo(e) {
+  const rows = e.info?.rows || [];
+  const setups = [...new Set(rows.map((r) => r.setup).filter(Boolean))];
+  const pax = rows.map((r) => Number(String(r.pax || '').replace(/[^\d]/g, ''))).filter((n) => n > 0);
+  return [setups.join(', '), pax.length ? `${Math.max(...pax)} pers.` : ''].filter(Boolean).join(' · ');
+}
+
+function taskHtml(e) {
+  const chips = e.tags.map((t) => (e.done || []).includes(t) ? `<span class="chip ok">${esc(t)} ✓</span>`
+    : `<span class="chip ${/démont/i.test(t) ? 'd' : /montage/i.test(t) ? 'm' : /show|répét/i.test(t) ? 's' : ''}">${esc(t)}</span>`).join('')
+    + (e.color === 'yellow' ? '<span class="chip pr">Prospect</span>' : '');
+  const time = e.start ? `${e.start}${e.end ? '–' + e.end : ''}` : '';
+  // événement sur plusieurs jours : déjà commencé avant le jour de la section
+  const since = e.date < e._day ? `<span class="since">en cours depuis ${esc(toDate(e.date).toLocaleDateString('fr-BE', { weekday: 'short', day: '2-digit', month: '2-digit' }))}</span>` : '';
+  const of = offerInfo(e), beo = beoInfo(e);
+  const ext = Object.entries(of.ext).map(([s, n]) => `${s} (${n})`).join(', ');
+  const l2 = [beo && esc(beo), of.dolce.length && `<span class="dolce">Dolce à amener : ${esc(of.dolce.join(', '))}</span>`, ext && `Livré par ${esc(ext)}`].filter(Boolean);
+  return `<div class="task"><span class="box"></span><div>
+    <div class="l1">${time ? `<span class="time">${esc(time)}</span>` : ''}${esc(e.client)}${e.detail ? ` — <span class="av">${esc(e.detail)}</span>` : ''}${chips}${since}</div>
+    ${l2.length ? `<div class="l2">${l2.join(' · ')}</div>` : ''}</div></div>`;
+}
+
+// regroupe par zone puis par salle (une salle réunie Coco 1+2+3 n'apparaît qu'une fois)
+function sectionHtml(list, areas) {
+  const locs = DATA.locations.filter((l) => l.kind === 'salle').sort((a, b) => a.id - b.id);
+  const byId = new Map(locs.map((l) => [l.id, l]));
+  let html = '';
+  for (const [label, test] of areas) {
+    const groups = new Map();
+    for (const e of list) {
+      const rooms = e.room_ids.map((id) => byId.get(id)).filter(Boolean);
+      if (!rooms.length || !test(rooms[0].floor)) continue;
+      const key = rooms.map((r) => r.id).sort((a, b) => a - b).join('+');
+      if (!groups.has(key)) groups.set(key, { order: Math.min(...rooms.map((r) => locs.indexOf(r))), name: rooms.map((r) => r.name).join(' + '), evs: [] });
+      groups.get(key).evs.push(e);
+    }
+    if (!groups.size) continue;
+    html += `<div class="floor">${esc(label)}</div>`;
+    for (const g of [...groups.values()].sort((a, b) => a.order - b.order)) {
+      g.evs.sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
+      html += `<div class="room"><div class="rname">${esc(g.name)}</div><div>${g.evs.map(taskHtml).join('')}</div></div>`;
+    }
+  }
+  return html;
+}
+
+function halfHtml(side, day) {
+  const areas = side === 'left' ? AREAS.slice(0, 2) : AREAS.slice(2);
+  const tomorrow = addDays(day, 1);
+  // un événement sur plusieurs jours n'apparaît qu'une fois : dans « Demain »
+  const tList = tasksOn(tomorrow).map((e) => ({ ...e, _day: tomorrow }));
+  const tIds = new Set(tList.map((e) => e.id));
+  const dList = tasksOn(day).filter((e) => !tIds.has(e.id)).map((e) => ({ ...e, _day: day }));
+  const tmw = sectionHtml(tList, areas), tod = sectionHtml(dList, areas);
+  const zone = side === 'left' ? 'Oasis · Rez-de-chaussée' : 'Étage +1 · Autres espaces';
+  return `<div class="half">
+    <div class="head"><img src="/mascotte/normal.svg" alt=""><div><div class="t">Fiche du jour</div><div class="d">${esc(zone)}</div></div>
+      <div class="side">Préparation du <b>${esc(longDay(day))}</b><br>pour le <b>${esc(longDay(tomorrow))}</b></div></div>
+    <div class="sec"><div class="sec-t"><span class="tag">Demain</span> À préparer pour ${esc(longDay(tomorrow))}</div>${tmw || '<div class="none">Rien à préparer dans ces salles.</div>'}</div>
+    <div class="sec today"><div class="sec-t"><span class="tag">Aujourd'hui</span> Encore à faire ${esc(longDay(day))}</div>${tod || '<div class="none">Rien en attente.</div>'}</div>
+    <div class="notes"><div class="nt">Notes</div><div class="lines"></div></div>
+    <div class="foot"><span>Dolce AV</span><span>imprimé le ${esc(new Date().toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}</span></div>
+  </div>`;
+}
+
+// tout doit tenir sur une page : on réduit la taille du texte si nécessaire (jusqu'à 6,5 px)
+function fit() {
+  const sheet = $('#sheet');
+  let fs = 10.5;
+  const over = () => [...sheet.querySelectorAll('.half')].some((h) => h.scrollHeight > h.clientHeight + 1);
+  sheet.style.setProperty('--fs', fs + 'px');
+  while (over() && fs > 6.5) { fs -= 0.25; sheet.style.setProperty('--fs', fs + 'px'); }
+  $('#fitWarn').style.display = over() ? 'block' : 'none';
+  $('#fitWarn').textContent = over() ? 'Journée très chargée : tout ne tient pas sur une page, même en petit. Les dernières lignes risquent d\'être coupées.' : '';
+}
+
+function render() {
+  const day = $('#day').value;
+  $('#sheet').innerHTML = halfHtml('left', day) + halfHtml('right', day) + '<div class="fold">✂ PLIER ICI</div>';
+  const t1 = tasksOn(addDays(day, 1)), ids1 = new Set(t1.map((e) => e.id));
+  const n1 = t1.length, n0 = tasksOn(day).filter((e) => !ids1.has(e.id)).length;
+  $('#sub').textContent = `${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${n0} encore aujourd'hui`;
+  history.replaceState(null, '', `?date=${day}`);
+  document.title = `Fiche du jour — ${day}`;
+  requestAnimationFrame(fit);
+}
+
+$('#day').addEventListener('change', render);
+$('#prev').onclick = () => { $('#day').value = addDays($('#day').value, -1); render(); };
+$('#next').onclick = () => { $('#day').value = addDays($('#day').value, 1); render(); };
+$('#today').onclick = () => { $('#day').value = isoOf(new Date()); render(); };
+$('#print').onclick = () => window.print();
+// application installée : PDF enregistré directement ; navigateur : impression (« Enregistrer au format PDF »)
+$('#pdf').onclick = async () => {
+  if (window.dolceav?.savePdf) {
+    $('#pdf').disabled = true; $('#pdf').textContent = 'Création du PDF…';
+    try { await window.dolceav.savePdf(`Fiche du jour ${$('#day').value}.pdf`); }
+    finally { $('#pdf').disabled = false; $('#pdf').textContent = 'Enregistrer en PDF'; }
+  } else window.print();
+};
+load();
+</script>
+</body>
+</html>
