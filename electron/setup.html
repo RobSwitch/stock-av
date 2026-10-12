@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
-<title>Stock AV — Paramètres</title>
+<title>Dolce AV — Paramètres</title>
 <style>
   :root { --bg:#f5f6f8; --ink:#1c2230; --muted:#6b7385; --line:#e2e5ec; --accent:#2f5bea; --ok:#1a7f4b; --err:#c0392b; }
   * { box-sizing:border-box; }
@@ -31,10 +31,10 @@
 </style>
 </head>
 <body>
-<header><img src="icon.png" alt=""><h1>Stock AV — paramètres</h1><span class="muted" id="ver" style="color:#aeb6c8;margin-left:auto"></span></header>
+<header><img src="icon.png" alt=""><h1>Dolce AV — paramètres</h1><span class="muted" id="ver" style="color:#aeb6c8;margin-left:auto"></span></header>
 <main>
   <div class="err hidden" id="error"></div>
-  <p style="margin-top:0">Comment ce PC doit-il utiliser Stock AV ? <span class="muted">(modifiable plus tard : menu <b>Stock AV → Paramètres de connexion</b>, touche Alt)</span></p>
+  <p style="margin-top:0">Comment ce PC doit-il utiliser Dolce AV ? <span class="muted">(modifiable plus tard : menu <b>Dolce AV → Paramètres de connexion</b>, touche Alt)</span></p>
 
   <label class="choice"><input type="radio" name="mode" value="server">
     <span><b>Ce PC est le serveur</b>
@@ -43,14 +43,14 @@
     <label class="f">Dossier des données
       <span class="row"><input type="text" id="dataDir"><button type="button" id="browse">Parcourir…</button></span></label>
     <div class="muted" id="dataHint" style="margin-top:6px"></div>
-    <label class="chk"><input type="checkbox" id="autostart" checked> Démarrer Stock AV avec Windows (le serveur tourne en arrière-plan, près de l'horloge)</label>
+    <label class="chk"><input type="checkbox" id="autostart" checked> Démarrer Dolce AV avec Windows (le serveur tourne en arrière-plan, près de l'horloge)</label>
   </div>
 
   <label class="choice"><input type="radio" name="mode" value="client">
     <span><b>Se connecter au serveur</b>
       <span class="muted">Ce PC utilise la base d'un autre PC (le serveur). Les données restent sur le serveur.</span></span></label>
   <div class="card hidden" id="clientBox">
-    <label class="f">Adresse du serveur <span>(affichée sur le PC serveur : clic droit sur l'icône Stock AV près de l'horloge)</span>
+    <label class="f">Adresse du serveur <span>(affichée sur le PC serveur : clic droit sur l'icône Dolce AV près de l'horloge)</span>
       <span class="row"><input type="text" id="serverUrl" placeholder="http://10.20.0.41:3000"><button type="button" id="test">Tester</button></span></label>
     <div id="testResult" style="margin-top:6px"></div>
   </div>

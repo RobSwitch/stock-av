@@ -1,5 +1,7 @@
 'use strict';
-// Application installable « Stock AV » (Electron)
+// Application installable « Dolce AV » (Electron)
+// Le nom technique reste « Stock AV » (package.json productName) : il fixe le dossier d'installation et
+// celui des paramètres (%APPDATA%\Stock AV) — le changer ferait perdre la configuration aux PC déjà installés.
 // - Mode « serveur » : ce PC garde la base et fait tourner le serveur (les autres PC s'y connectent)
 // - Mode « client » : se connecte au serveur d'un autre PC (adresse saisie au premier lancement)
 // - Mise à jour automatique depuis les « Releases » GitHub, vérifiée à chaque lancement
@@ -18,7 +20,7 @@ const saveConfig = (c) => { fs.mkdirSync(path.dirname(CONFIG_FILE), { recursive:
 function suggestedDataDir() {
   const old = path.join(os.homedir(), 'Documents', 'stock-av');
   if (fs.existsSync(path.join(old, 'stock.db'))) return old;
-  return path.join(app.getPath('documents'), 'Stock AV');
+  return path.join(app.getPath('documents'), 'Dolce AV'); // nouveau serveur uniquement (un serveur existant garde son dossier)
 }
 // Adresses de ce PC sur le réseau (à donner aux autres PC)
 const lanUrls = (port) => Object.values(os.networkInterfaces()).flat()
@@ -33,7 +35,7 @@ app.on('second-instance', () => showWindow());
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1400, height: 900, minWidth: 900, minHeight: 600, show: false, icon: ICON, title: 'Stock AV',
+    width: 1400, height: 900, minWidth: 900, minHeight: 600, show: false, icon: ICON, title: 'Dolce AV',
     autoHideMenuBar: true, backgroundColor: '#f5f6f8',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
   });
@@ -52,7 +54,7 @@ function createWindow() {
     if (config?.mode === 'server' && !quitting) {
       e.preventDefault(); win.hide();
       if (tray && !config.trayHintShown) {
-        tray.displayBalloon?.({ title: 'Stock AV continue de tourner', content: 'Le serveur reste actif pour les autres PC. Clic droit sur l\'icône près de l\'horloge pour quitter.', iconType: 'info' });
+        tray.displayBalloon?.({ title: 'Dolce AV continue de tourner', content: 'Le serveur reste actif pour les autres PC. Clic droit sur l\'icône près de l\'horloge pour quitter.', iconType: 'info' });
         config.trayHintShown = true; saveConfig(config);
       }
     }
@@ -76,15 +78,15 @@ function buildMenu() {
     { label: 'Rechercher une mise à jour', click: () => checkUpdates(true) },
     { label: 'Outils de développement', accelerator: 'F12', click: () => win.webContents.toggleDevTools() },
     { type: 'separator' }, { label: 'Quitter', click: () => { quitting = true; app.quit(); } });
-  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Stock AV', submenu: items }]));
+  Menu.setApplicationMenu(Menu.buildFromTemplate([{ label: 'Dolce AV', submenu: items }]));
 }
 
 function createTray(port) {
   tray = new Tray(ICON);
-  tray.setToolTip('Stock AV — serveur actif');
+  tray.setToolTip('Dolce AV — serveur actif');
   const urls = lanUrls(port);
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: 'Ouvrir Stock AV', click: showWindow },
+    { label: 'Ouvrir Dolce AV', click: showWindow },
     { type: 'separator' },
     { label: 'Adresse pour les autres PC :', enabled: false },
     ...(urls.length ? urls.map((u) => ({ label: `   ${u}  (copier)`, click: () => clipboard.writeText(u) })) : [{ label: '   (pas de réseau)', enabled: false }]),
@@ -103,7 +105,7 @@ function checkUpdates(manual = false) {
   autoUpdater.checkForUpdates().catch(() => {});
 }
 autoUpdater.autoDownload = true;
-autoUpdater.on('update-not-available', () => { if (manualCheck) dialog.showMessageBox(win, { message: `Stock AV est à jour (version ${app.getVersion()}).` }); manualCheck = false; });
+autoUpdater.on('update-not-available', () => { if (manualCheck) dialog.showMessageBox(win, { message: `Dolce AV est à jour (version ${app.getVersion()}).` }); manualCheck = false; });
 autoUpdater.on('error', (e) => { if (manualCheck) dialog.showMessageBox(win, { type: 'warning', message: 'Impossible de vérifier les mises à jour.', detail: String(e?.message || e) }); manualCheck = false; });
 autoUpdater.on('update-downloaded', async (info) => {
   const { response } = await dialog.showMessageBox(win, {
@@ -151,7 +153,7 @@ app.whenReady().then(async () => {
     win.loadURL(appUrl);
   } catch (e) {
     const msg = e.code === 'EADDRINUSE'
-      ? `Le port ${config.port || 3000} est déjà utilisé : l'ancien serveur (fenêtre noire « node server.js ») tourne sans doute encore. Ferme-le, puis relance Stock AV.`
+      ? `Le port ${config.port || 3000} est déjà utilisé : l'ancien serveur (fenêtre noire « node server.js ») tourne sans doute encore. Ferme-le, puis relance Dolce AV.`
       : `Le serveur n'a pas pu démarrer : ${e.message}`;
     openSetup(msg);
   }

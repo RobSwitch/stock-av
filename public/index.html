@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stock Audiovisuel</title>
+<title>Dolce AV</title>
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
   :root { --bg:#f5f6f8; --card:#fff; --ink:#1c2230; --muted:#6b7385; --line:#e2e5ec; --accent:#2f5bea; --ok:#1a7f4b; --err:#c0392b; }
@@ -11,6 +11,9 @@
   body { margin:0; font:15px/1.4 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--ink); }
   header { background:var(--ink); color:#fff; padding:12px 20px; display:flex; align-items:center; gap:24px; flex-wrap:wrap; }
   header h1 { margin:0; font-size:18px; }
+  header h1.brand { display:flex; align-items:center; gap:10px; font-size:20px; font-weight:700; letter-spacing:.01em; }
+  header h1.brand img { width:36px; height:36px; border-radius:9px; }
+  header h1.brand small { font-weight:400; font-size:11px; opacity:.6; letter-spacing:0; align-self:flex-end; margin-bottom:3px; }
   nav button { background:none; border:0; color:#aeb6c8; font:inherit; padding:8px 12px; cursor:pointer; border-radius:6px; }
   nav button.active { background:#2c3550; color:#fff; }
   main { max-width:1100px; margin:20px auto; padding:0 16px; }
@@ -269,7 +272,7 @@
 </head>
 <body class="plwide"><!-- l'app s'ouvre sur le Planning BEO (pleine largeur) -->
 <header>
-  <h1>🎛️ Stock Audiovisuel <small id="ver" style="font-weight:400;font-size:11px;opacity:.6"></small></h1>
+  <h1 class="brand"><img src="/icon.png" alt="">Dolce AV <small id="ver"></small></h1>
   <nav id="nav">
     <button data-tab="inventaire">Inventaire</button>
     <button data-tab="lieux">Salles</button>

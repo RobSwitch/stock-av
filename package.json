@@ -1,8 +1,8 @@
 {
   "name": "stock-av",
   "productName": "Stock AV",
-  "version": "1.0.3",
-  "description": "Suivi du stock audiovisuel et planning BEO",
+  "version": "1.0.4",
+  "description": "Dolce AV — suivi du stock audiovisuel et planning BEO",
   "author": "Robin Schouten",
   "license": "UNLICENSED",
   "private": true,
@@ -42,8 +42,8 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Stock AV",
-      "artifactName": "Stock-AV-Setup-${version}.${ext}"
+      "shortcutName": "Dolce AV",
+      "artifactName": "Dolce-AV-Setup-${version}.${ext}"
     },
     "publish": [
       {

@@ -34,7 +34,7 @@ jobs:
         run: |
           V=$(node -p "require('./package.json').version")
           ls -la dist
-          gh release create "v$V" "dist/Stock-AV-Setup-$V.exe" "dist/Stock-AV-Setup-$V.exe.blockmap" dist/latest.yml \
-            --title "$V" --notes "Stock AV version $V" --latest
+          gh release create "v$V" "dist/Dolce-AV-Setup-$V.exe" "dist/Dolce-AV-Setup-$V.exe.blockmap" dist/latest.yml \
+            --title "$V" --notes "Dolce AV version $V" --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

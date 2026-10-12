@@ -881,12 +881,12 @@ module.exports = { start, BUILD, DATA_DIR };
 
 if (require.main === module) {
   start().then(() => {
-    console.log(`Stock AV (${BUILD}) sur http://localhost:${PORT}`);
+    console.log(`Dolce AV (${BUILD}) sur http://localhost:${PORT}`);
     console.log(`Données : ${DATA_DIR}`);
   }).catch((e) => {
     if (e.code === 'EADDRINUSE') {
       console.log(`\nERREUR : le port ${PORT} est déjà utilisé.`);
-      console.log('Une ancienne fenêtre du serveur (ou l\'application Stock AV en mode serveur) tourne encore.');
+      console.log('Une ancienne fenêtre du serveur (ou l\'application Dolce AV en mode serveur) tourne encore.');
       console.log('Ferme-la, ou termine « Node.js JavaScript Runtime » dans le Gestionnaire des tâches, puis relance : node server.js\n');
       process.exit(1);
     }
