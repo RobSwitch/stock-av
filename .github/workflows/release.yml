@@ -25,14 +25,16 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
-      # La Release est d'abord créée en brouillon (envoi des fichiers sans conflit),
-      # puis rendue publique : c'est à ce moment que les applications installées la voient.
-      - name: Fabriquer l'installateur et l'envoyer (brouillon)
-        run: npx electron-builder --win --publish always
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Rendre la version publique
+      # electron-builder fabrique seulement les fichiers (son envoi en parallèle créait des Releases en double) ;
+      # gh crée ensuite la Release avec les 3 fichiers d'un coup. Les applications installées lisent latest.yml.
+      - name: Fabriquer l'installateur
+        run: npx electron-builder --win --publish never
+      - name: Publier la Release
         shell: bash
-        run: gh release edit "v$(node -p "require('./package.json').version")" --draft=false --latest
+        run: |
+          V=$(node -p "require('./package.json').version")
+          ls -la dist
+          gh release create "v$V" "dist/Stock-AV-Setup-$V.exe" "dist/Stock-AV-Setup-$V.exe.blockmap" dist/latest.yml \
+            --title "$V" --notes "Stock AV version $V" --latest
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,7 +1,7 @@
 {
   "name": "stock-av",
   "productName": "Stock AV",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Suivi du stock audiovisuel et planning BEO",
   "author": "Robin Schouten",
   "license": "UNLICENSED",
@@ -42,14 +42,15 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "Stock AV"
+      "shortcutName": "Stock AV",
+      "artifactName": "Stock-AV-Setup-${version}.${ext}"
     },
     "publish": [
       {
         "provider": "github",
         "owner": "RobSwitch",
         "repo": "stock-av",
-        "releaseType": "draft"
+        "releaseType": "release"
       }
     ]
   },
