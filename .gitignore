@@ -12,3 +12,6 @@ offres/
 # ---- Fichiers générés
 node_modules/
 dist/
+
+# aperçus de style (fichiers de travail)
+apercu*.html

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" class="fox fox-content" role="img" aria-label="Mascotte Dolce AV"><defs>
+    <linearGradient id="fur-content" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffa64d"/><stop offset="1" stop-color="#f0741c"/></linearGradient>
+    <linearGradient id="ear-content" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff9a3c"/><stop offset="1" stop-color="#e8661a"/></linearGradient>
+    <radialGradient id="iris-content" cx="0.5" cy="0.7" r="0.6"><stop offset="0" stop-color="#b8661f"/><stop offset="0.55" stop-color="#5a2a10"/><stop offset="1" stop-color="#26150b"/></radialGradient>
+    <linearGradient id="cup-content" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e8384f"/><stop offset="1" stop-color="#a8132c"/></linearGradient>
+  </defs>
+    <path d="M136 236 C 132 180 140 120 158 86 C 192 110 222 146 236 180 Z" fill="url(#ear-content)"/>
+    <path d="M376 236 C 380 180 372 120 354 86 C 320 110 290 146 276 180 Z" fill="url(#ear-content)"/>
+    <path d="M158 212 C 156 172 160 136 168 116 C 188 134 206 156 214 178 Z" fill="#ffd9b8"/>
+    <path d="M354 212 C 356 172 352 136 344 116 C 324 134 306 156 298 178 Z" fill="#ffd9b8"/>
+    <path d="M256 150 C 334 150 384 196 392 256 C 396 288 414 304 440 322 C 404 334 384 354 362 378 C 332 410 296 424 256 424 C 216 424 180 410 150 378 C 128 354 108 334 72 322 C 98 304 116 288 120 256 C 128 196 178 150 256 150 Z" fill="url(#fur-content)"/>
+    <path d="M232 152 C 244 170 252 176 256 192 C 260 176 268 170 280 152 C 270 150 242 150 232 152 Z" fill="#ffb867" opacity="0.9"/>
+    <path d="M78 322 C 118 324 148 304 176 304 C 206 304 232 322 256 334 C 280 322 306 304 336 304 C 364 304 394 324 434 322 C 402 336 382 356 362 378 C 332 410 296 424 256 424 C 216 424 180 410 150 378 C 130 356 110 336 78 322 Z" fill="#fff6ec"/>
+      <path d="M168 270 Q 194 240 220 270" fill="none" stroke="#2a1608" stroke-width="8" stroke-linecap="round"/>
+      <path d="M292 270 Q 318 240 344 270" fill="none" stroke="#2a1608" stroke-width="8" stroke-linecap="round"/><ellipse cx="160" cy="320" rx="22" ry="12" fill="#ff8a9a" opacity="0.7"/><ellipse cx="352" cy="320" rx="22" ry="12" fill="#ff8a9a" opacity="0.7"/><path d="M242 318 Q256 310 270 318 Q264 334 256 336 Q248 334 242 318 Z" fill="#2a1608"/><ellipse cx="251" cy="317" rx="4" ry="2.5" fill="#fff" opacity="0.7"/><path d="M232 344 Q 256 382 280 344 Z" fill="#2a1608"/><path d="M242 360 Q 256 376 270 360 Q 256 366 242 360 Z" fill="#ff7d8c"/>
+    <path d="M112 262 C 104 116 408 116 400 262" fill="none" stroke="#1b2442" stroke-width="30" stroke-linecap="round"/>
+    <path d="M112 262 C 104 116 408 116 400 262" fill="none" stroke="#e9edf8" stroke-width="20" stroke-linecap="round"/>
+    <path d="M127 206 Q 145 180 174 166" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
+    <rect x="84" y="232" width="56" height="88" rx="24" fill="url(#cup-content)" stroke="#1b2442" stroke-width="5"/>
+    <rect x="372" y="232" width="56" height="88" rx="24" fill="url(#cup-content)" stroke="#1b2442" stroke-width="5"/>
+    <rect x="96" y="246" width="12" height="40" rx="6" fill="#fff" opacity="0.45"/>
+    <rect x="384" y="246" width="12" height="40" rx="6" fill="#fff" opacity="0.45"/><path d="M430 120 l6 16 16 6 -16 6 -6 16 -6 -16 -16 -6 16 -6z" fill="#ffd27a" class="fx-pop"/></svg>

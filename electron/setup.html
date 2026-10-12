@@ -5,11 +5,15 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'">
 <title>Dolce AV — Paramètres</title>
 <style>
-  :root { --bg:#f5f6f8; --ink:#1c2230; --muted:#6b7385; --line:#e2e5ec; --accent:#2f5bea; --ok:#1a7f4b; --err:#c0392b; }
+  :root { --bg:#f6f4f1; --ink:#1d1f27; --muted:#6c6f7d; --line:#ece7e2; --accent:#a6192e; --accent-soft:#fbe8eb; --ok:#2f9e66; --err:#d64045; }
   * { box-sizing:border-box; }
   body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--ink); }
-  header { background:var(--ink); color:#fff; padding:14px 24px; display:flex; align-items:center; gap:12px; }
-  header img { width:30px; height:30px; }
+  body { font-family:"Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; }
+  header { background:#fff; color:var(--ink); border-bottom:1px solid var(--line); padding:10px 24px; display:flex; align-items:center; gap:10px; }
+  header img { width:44px; height:44px; filter:drop-shadow(0 2px 3px rgba(0,0,0,.18)); }
+  .card, .choice { box-shadow:0 4px 18px rgba(30,25,20,.07); }
+  .choice:has(input:checked) { background:var(--accent-soft) !important; }
+  input[type=radio], input[type=checkbox] { accent-color:var(--accent); }
   header h1 { margin:0; font-size:18px; }
   main { max-width:720px; margin:28px auto; padding:0 16px; }
   .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:18px 20px; margin-bottom:14px; }
@@ -31,7 +35,7 @@
 </style>
 </head>
 <body>
-<header><img src="icon.png" alt=""><h1>Dolce AV — paramètres</h1><span class="muted" id="ver" style="color:#aeb6c8;margin-left:auto"></span></header>
+<header><img src="../public/mascotte/normal.svg" alt=""><h1>Dolce AV — paramètres</h1><span class="muted" id="ver" style="margin-left:auto"></span></header>
 <main>
   <div class="err hidden" id="error"></div>
   <p style="margin-top:0">Comment ce PC doit-il utiliser Dolce AV ? <span class="muted">(modifiable plus tard : menu <b>Dolce AV → Paramètres de connexion</b>, touche Alt)</span></p>

@@ -36,7 +36,7 @@ app.on('second-instance', () => showWindow());
 function createWindow() {
   win = new BrowserWindow({
     width: 1400, height: 900, minWidth: 900, minHeight: 600, show: false, icon: ICON, title: 'Dolce AV',
-    autoHideMenuBar: true, backgroundColor: '#f5f6f8',
+    autoHideMenuBar: true, backgroundColor: '#141b30',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
   });
   win.once('ready-to-show', () => { if (!startHidden) { win.maximize(); win.show(); } });
@@ -61,6 +61,29 @@ function createWindow() {
   });
   buildMenu();
 }
+// Écran de démarrage : le renard s'impatiente pendant que le serveur démarre / que l'app s'y connecte
+function splashUrl() {
+  let fox = '';
+  try { fox = fs.readFileSync(path.join(__dirname, '..', 'public', 'mascotte', 'impatient.svg'), 'utf8'); } catch {}
+  const html = `<!doctype html><html><head><meta charset="utf-8"><style>
+    html,body{margin:0;height:100%;font-family:"Segoe UI Variable Display","Segoe UI",system-ui,sans-serif;color:#fff;
+      background:radial-gradient(circle at 50% 38%,#34447a,#141b30 70%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;overflow:hidden}
+    .fox{width:150px;animation:sway 1.1s ease-in-out infinite;transform-origin:50% 90%;filter:drop-shadow(0 10px 18px rgba(0,0,0,.4))}
+    .fox svg{width:100%;height:auto;display:block;overflow:visible}
+    b{font-size:26px} .bar{width:180px;height:4px;border-radius:4px;background:rgba(255,255,255,.18);overflow:hidden}
+    .bar i{display:block;height:100%;width:40%;border-radius:4px;background:#e8384f;animation:load 1.4s ease-in-out infinite}
+    span{font-size:14px;opacity:.7}
+    @keyframes sway{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+    @keyframes load{0%{transform:translateX(-100%)}100%{transform:translateX(260%)}}
+    .fx-drop{animation:drop 2.2s ease-in infinite;transform-box:fill-box}
+    @keyframes drop{0%,40%{transform:translateY(0);opacity:1}90%{transform:translateY(26px);opacity:0}100%{opacity:0}}
+    .fx-d1,.fx-d2,.fx-d3{animation:dot 1.2s infinite}.fx-d2{animation-delay:.2s}.fx-d3{animation-delay:.4s}
+    @keyframes dot{0%,60%,100%{opacity:.2}30%{opacity:1}}
+  </style></head><body><div class="fox">${fox}</div><b>Dolce AV</b><div class="bar"><i></i></div>
+  <span>${config?.mode === 'server' ? 'Démarrage du serveur…' : 'Connexion au serveur…'}</span></body></html>`;
+  return 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+}
+
 function showWindow() { if (!win) return; if (win.isMinimized()) win.restore(); if (!win.isVisible()) { win.maximize(); win.show(); } win.focus(); }
 
 function openSetup(error) {
@@ -140,6 +163,7 @@ app.whenReady().then(async () => {
   config = readConfig();
   createWindow();
   if (!config?.mode) return openSetup();
+  await win.loadURL(splashUrl()).catch(() => {}); // écran d'attente, remplacé dès que l'app est prête
   try {
     if (config.mode === 'server') {
       process.env.STOCKAV_DATA = config.dataDir || suggestedDataDir(); // lu par server.js au chargement
