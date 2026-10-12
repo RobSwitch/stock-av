@@ -90,7 +90,9 @@
   details.hist[open] > summary::before { content:"▾"; }
   details.hist[open] > summary { border-bottom:1px solid var(--line); }
   details.hist table { margin:6px 14px 10px; width:calc(100% - 28px); }
-  .hdate { color:var(--muted); font-size:13px; width:130px; flex:none; }
+  .hdate { color:var(--muted); font-size:14px; font-variant-numeric:tabular-nums; width:48px; flex:none; }
+  .hday { margin:22px 0 8px; font-size:16px; text-transform:capitalize; }
+  .hday:first-child { margin-top:4px; }
   /* Trajet en 3 colonnes fixes : source | flèche | destination, alignées d'une ligne à l'autre */
   .hroute { display:grid; grid-template-columns:minmax(0,175px) 22px minmax(0,175px); align-items:baseline; flex:none; max-width:100%; }
   .hroute b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -871,6 +873,7 @@ async function loadHistory() {
   // Type de déplacement selon la nature de la source et de la destination
   const kind = (x) => {
     const f = x.from_kind, t = x.to_kind; // 'stock' | 'salle' | null (= Extérieur)
+    if (/^Annulation/.test(x.note || '')) return ['Annulation', 'stk']; // validation « Prêt » annulée (matériel remis en place)
     if (!x.from_name) return ['Entrée', 'in'];
     if (!x.to_name) return /^Retiré/.test(x.note || '') ? ['Retrait', 'out'] : ['Sortie', 'out'];
     if (f === 'stock' && t === 'salle') return ['Montage', 'mount'];
@@ -879,11 +882,20 @@ async function loadHistory() {
     if (f === 'stock' && t === 'stock') return ['Transfert entre stocks', 'stk'];
     return ['Déplacement', 'stk'];
   };
+  // Titre de jour (« Aujourd'hui — lundi 12/10 », « Hier — … ») dès que la date change ; sur chaque ligne, seulement l'heure
+  const dayTitle = (d) => {
+    const long = toDate(d).toLocaleDateString('fr-BE', { weekday: 'long', day: '2-digit', month: '2-digit', year: d.slice(0, 4) === isoToday().slice(0, 4) ? undefined : 'numeric' });
+    return d === isoToday() ? `Aujourd'hui — ${long}` : d === addDays(isoToday(), -1) ? `Hier — ${long}` : long;
+  };
+  let day = null;
   $('#histList').innerHTML = m.map((x) => {
     const [label, cls] = kind(x);
     const n = x.lines.length;
-    return `<details class="hist"><summary>` +
-      `<span class="hdate">${esc(x.ts)}</span>` +
+    const d = x.ts.slice(0, 10);
+    const head = d !== day ? `<h2 class="hday">${esc(dayTitle(d))}</h2>` : '';
+    day = d;
+    return head + `<details class="hist"><summary>` +
+      `<span class="hdate" title="${esc(x.ts)}">${esc(x.ts.slice(11, 16))}</span>` +
       `<span class="hroute"><b title="${esc(x.from_name || 'Extérieur')}">${esc(x.from_name || 'Extérieur')}</b><span class="arr">→</span><b title="${esc(x.to_name || 'Extérieur')}">${esc(x.to_name || 'Extérieur')}</b></span>` +
       `<span class="tag2 ${cls}">${label}</span>` +
       `<span class="hcount">${n} référence${n > 1 ? 's' : ''} · ${x.total_qty} pièce${x.total_qty > 1 ? 's' : ''}</span>` +
