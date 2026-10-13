@@ -49,6 +49,21 @@
   .task { display:grid; grid-template-columns:1.25em 1fr; gap:.5em; align-items:start; }
   .task + .task { margin-top:.4em; }
   .box { width:1.1em; height:1.1em; border:1.4px solid var(--ink); border-radius:.22em; margin-top:.12em; }
+  /* une ligne par salle : salle + libre dès | aujourd'hui (à vérifier / démonter) | demain (à préparer) */
+  .cols { display:grid; grid-template-columns:7.6em 1fr 1.25fr; gap:.7em; font-size:.75em; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding-bottom:.3em; border-bottom:2px solid var(--ink); }
+  .cols b { color:var(--accent); }
+  .rrow { display:grid; grid-template-columns:7.6em 1fr 1.25fr; gap:.7em; padding:.45em 0; border-bottom:1px dotted var(--line); break-inside:avoid; }
+  .rc .rname { font-weight:800; line-height:1.2; }
+  .free { display:inline-block; margin-top:.2em; font-size:.85em; color:var(--ink); background:#fff4d6; border-radius:.3em; padding:0 .4em; white-space:nowrap; }
+  .free b { font-size:1.12em; }
+  .free.ok { background:#e6f5ec; color:var(--green); font-weight:700; }
+  .tc { border-right:1px dashed var(--line); padding-right:.6em; }
+  .ev0 { color:var(--muted); font-size:.92em; }
+  .ev0 .time { font-weight:700; margin-right:.4em; font-variant-numeric:tabular-nums; }
+  .task.mat { margin-top:.35em; }
+  .task.mat b { color:var(--red); }
+  .task.mat.stays b { color:var(--green); }
+  .clean { color:var(--green); font-size:.85em; margin-top:.2em; }
   .since { color:var(--muted); font-size:.85em; font-style:italic; margin-left:.4em; }
   .l1 { font-weight:600; }
   .l1 .time { font-variant-numeric:tabular-nums; font-weight:800; margin-right:1.2mm; }
@@ -125,7 +140,7 @@ $('#day').value = params.get('date') || isoOf(new Date());
 
 async function load() {
   const [pl, d] = await Promise.all([fetch('/api/planning').then((r) => r.json()), fetch('/api/data').then((r) => r.json())]);
-  DATA = { ...pl, locations: d.locations };
+  DATA = { ...pl, locations: d.locations, stock: d.stock, items: d.items };
   render();
 }
 
@@ -170,44 +185,96 @@ function taskHtml(e) {
     ${l2.length ? `<div class="l2">${l2.join(' · ')}</div>` : ''}</div></div>`;
 }
 
-// regroupe par zone puis par salle (une salle réunie Coco 1+2+3 n'apparaît qu'une fois)
-function sectionHtml(list, areas) {
+// ---- Matériel actuellement en salle (hors équipement inclus) : venu du stock, ou installé par une société externe
+function stockIn(roomId) {
+  return DATA.stock.filter((s) => s.location_id === roomId).map((s) => `${s.qty} × ${DATA.items.find((i) => i.id === s.item_id)?.name || '?'}`);
+}
+function externalIn(roomId) { // dernière validation (montage / démontage) de chaque offre + salle de la fiche
+  const last = new Map();
+  for (const m of DATA.offerMoves || []) for (const x of m.external || []) last.set(`${x.offer_id}|${x.room_name}`, m);
+  const out = {};
+  for (const [k, m] of last) {
+    if (m.phase !== 'Montage') continue;
+    for (const x of m.external) if (`${x.offer_id}|${x.room_name}` === k && x.room_ids.includes(roomId)) out[x.supplier] = (out[x.supplier] || 0) + x.qty;
+  }
+  return out; // { CAS: 12, … }
+}
+// heure à laquelle la salle se libère : fin du dernier événement « client » du jour
+// (un montage / démontage créé par une fiche technique, sans heure de fin, est notre travail : il ne bloque pas la salle)
+const isOurJob = (e) => !e.end && e.tags.length && e.tags.every((t) => PHASES.includes(t));
+const endOf = (evs) => evs.filter((e) => !isOurJob(e)).map((e) => e.end || '?').sort().pop() || '';
+
+// Une ligne par salle : [ salle + « libre dès » ] [ aujourd'hui : à vérifier / matériel à démonter ] [ demain : à préparer ]
+function roomRows(areas, day) {
+  const tomorrow = addDays(day, 1);
   const locs = DATA.locations.filter((l) => l.kind === 'salle').sort((a, b) => a.id - b.id);
-  const byId = new Map(locs.map((l) => [l.id, l]));
+  const onDay = (e, d) => e.date <= d && d <= e.end_date;
+  const tasks1 = tasksOn(tomorrow);
   let html = '';
+  const stats = { rooms: 0, mat: 0 };
   for (const [label, test] of areas) {
-    const groups = new Map();
-    for (const e of list) {
-      const rooms = e.room_ids.map((id) => byId.get(id)).filter(Boolean);
-      if (!rooms.length || !test(rooms[0].floor)) continue;
-      const key = rooms.map((r) => r.id).sort((a, b) => a - b).join('+');
-      if (!groups.has(key)) groups.set(key, { order: Math.min(...rooms.map((r) => locs.indexOf(r))), name: rooms.map((r) => r.name).join(' + '), evs: [] });
-      groups.get(key).evs.push(e);
+    const rows = [];
+    for (const l of locs.filter((x) => test(x.floor))) {
+      const today = DATA.events.filter((e) => onDay(e, day) && e.room_ids.includes(l.id)).sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
+      const tmw = tasks1.filter((e) => e.room_ids.includes(l.id)).sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
+      const stock = stockIn(l.id), ext = externalIn(l.id);
+      const hasMat = stock.length || Object.keys(ext).length;
+      if (!today.length && !tmw.length && !hasMat) continue;
+      // le matériel peut rester si la même société occupe encore la salle demain
+      const tomorrowAll = DATA.events.filter((e) => onDay(e, tomorrow) && e.room_ids.includes(l.id));
+      const stays = hasMat && today.some((t) => tomorrowAll.some((n) => n.id === t.id || sameClient(n.client, t.client)));
+      const room = { name: l.name, stock, ext, hasMat, stays };
+      // salles voisines au même programme (Coco 1 + 2 + 3 réunies) : une seule ligne, le matériel reste détaillé par salle
+      const sig = JSON.stringify([today.map((e) => e.id), tmw.map((e) => e.id)]);
+      const prev = rows[rows.length - 1];
+      if (prev && prev.sig === sig && (today.length || tmw.length)) { prev.rooms.push(room); continue; }
+      rows.push({ sig, rooms: [room], today, tmw });
     }
-    if (!groups.size) continue;
+    if (!rows.length) continue;
     html += `<div class="floor">${esc(label)}</div>`;
-    for (const g of [...groups.values()].sort((a, b) => a.order - b.order)) {
-      g.evs.sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
-      html += `<div class="room"><div class="rname">${esc(g.name)}</div><div>${g.evs.map(taskHtml).join('')}</div></div>`;
+    for (const r of rows) {
+      stats.rooms++;
+      const end = endOf(r.today);
+      const free = !end ? '<span class="free ok">libre</span>'
+        : end === '?' ? '<span class="free">heure de fin ?</span>' : `<span class="free">libre dès <b>${esc(end)}</b></span>`;
+      // aujourd'hui : qui a tourné, et ce qu'il reste à faire ce soir (démontage, montage pas validé)
+      const todayHtml = r.today.map((e) => {
+        const left = e.tags.filter((t) => PHASES.includes(t) && !(e.done || []).includes(t));
+        const chips = left.map((t) => `<span class="chip d">${t === 'Démontage' ? 'démontage à faire' : 'montage pas validé'}</span>`).join(' ');
+        return `<div class="ev0">${e.start ? `<span class="time">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</span>` : ''}${esc(e.client)}${chips ? ' ' + chips : ''}</div>`;
+      }).join('');
+      // matériel regroupé : une offre sur « Coco » (salles réunies) n'est listée qu'une fois
+      const groups = [];
+      for (const x of r.rooms.filter((y) => y.hasMat)) {
+        const key = JSON.stringify([x.stock, x.ext, x.stays]);
+        const g = groups.find((y) => y.key === key);
+        if (g) g.names.push(x.name); else groups.push({ key, names: [x.name], ...x });
+      }
+      const mat = !groups.length ? (r.today.length ? '<div class="clean">✓ aucun matériel à démonter</div>' : '')
+        : groups.map((x) => {
+          if (!x.stays) stats.mat++;
+          const where = x.names.length < r.rooms.length ? ` <u>${esc(x.names.join(' + '))}</u>` : '';
+          const extTxt = Object.entries(x.ext).map(([s, n]) => `matériel ${s} (${n} élément${n > 1 ? 's' : ''})`).join(', ');
+          return `<div class="task mat ${x.stays ? 'stays' : ''}"><span class="box"></span><div>${x.stays ? '<b>Peut rester</b> (même société demain)' : '<b>À démonter</b>'}${where} : ${esc([...x.stock, extTxt].filter(Boolean).join(', '))}</div></div>`;
+        }).join('');
+      const tmwHtml = r.tmw.length ? r.tmw.map((e) => taskHtml({ ...e, _day: tomorrow })).join('') : '<div class="none">—</div>';
+      html += `<div class="rrow"><div class="rc"><div class="rname">${esc(r.rooms.map((x) => x.name).join(' + '))}</div>${free}</div>
+        <div class="tc">${todayHtml}${mat}</div><div class="mc">${tmwHtml}</div></div>`;
     }
   }
-  return html;
+  return { html, stats };
 }
 
 function halfHtml(side, day) {
   const areas = side === 'left' ? AREAS.slice(0, 2) : AREAS.slice(2);
   const tomorrow = addDays(day, 1);
-  // un événement sur plusieurs jours n'apparaît qu'une fois : dans « Demain »
-  const tList = tasksOn(tomorrow).map((e) => ({ ...e, _day: tomorrow }));
-  const tIds = new Set(tList.map((e) => e.id));
-  const dList = tasksOn(day).filter((e) => !tIds.has(e.id)).map((e) => ({ ...e, _day: day }));
-  const tmw = sectionHtml(tList, areas), tod = sectionHtml(dList, areas);
+  const { html } = roomRows(areas, day);
   const zone = side === 'left' ? 'Oasis · Rez-de-chaussée' : 'Étage +1 · Autres espaces';
   return `<div class="half">
     <div class="head"><img src="/mascotte/normal.svg" alt=""><div><div class="t">Fiche du jour</div><div class="d">${esc(zone)}</div></div>
       <div class="side">Préparation du <b>${esc(longDay(day))}</b><br>pour le <b>${esc(longDay(tomorrow))}</b></div></div>
-    <div class="sec"><div class="sec-t"><span class="tag">Demain</span> À préparer pour ${esc(longDay(tomorrow))}</div>${tmw || '<div class="none">Rien à préparer dans ces salles.</div>'}</div>
-    <div class="sec today"><div class="sec-t"><span class="tag">Aujourd'hui</span> Encore à faire ${esc(longDay(day))}</div>${tod || '<div class="none">Rien en attente.</div>'}</div>
+    <div class="cols"><span>Salle</span><span>Aujourd'hui · à vérifier / démonter</span><span><b>Demain</b> · à préparer</span></div>
+    ${html || '<div class="none">Aucune salle à vérifier ni à préparer dans cette zone.</div>'}
     <div class="notes"><div class="nt">Notes</div><div class="lines"></div></div>
     <div class="foot"><span>Dolce AV</span><span>imprimé le ${esc(new Date().toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}</span></div>
   </div>`;
@@ -227,9 +294,9 @@ function fit() {
 function render() {
   const day = $('#day').value;
   $('#sheet').innerHTML = halfHtml('left', day) + halfHtml('right', day) + '<div class="fold">✂ PLIER ICI</div>';
-  const t1 = tasksOn(addDays(day, 1)), ids1 = new Set(t1.map((e) => e.id));
-  const n1 = t1.length, n0 = tasksOn(day).filter((e) => !ids1.has(e.id)).length;
-  $('#sub').textContent = `${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${n0} encore aujourd'hui`;
+  const n1 = tasksOn(addDays(day, 1)).length;
+  const st = roomRows(AREAS, day).stats;
+  $('#sub').textContent = `${st.rooms} salle${st.rooms > 1 ? 's' : ''} à passer · ${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${st.mat} salle${st.mat > 1 ? 's' : ''} avec matériel à démonter`;
   history.replaceState(null, '', `?date=${day}`);
   document.title = `Fiche du jour — ${day}`;
   requestAnimationFrame(fit);
