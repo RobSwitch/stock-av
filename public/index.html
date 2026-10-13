@@ -192,6 +192,44 @@
   details.hist[open] > summary { border-bottom:1px solid var(--line); }
   details.hist table { margin:6px 16px 10px; width:calc(100% - 32px); }
   .hdate { color:var(--muted); font-size:14px; font-weight:600; font-variant-numeric:tabular-nums; width:48px; flex:none; }
+  /* Contrôle : alertes + journal des imports */
+  .navcount { min-width:18px; height:18px; padding:0 5px; border-radius:999px; background:var(--amber-soft); color:var(--amber-ink); font-size:11px; font-weight:700; display:inline-grid; place-items:center; }
+  .navcount:empty { display:none; }
+  .navcount.err { background:var(--red-soft); color:var(--red-ink); }
+  .ck { display:flex; align-items:flex-start; gap:12px; padding:10px 12px; border-radius:12px; margin-bottom:6px; background:var(--surface-2); border-left:4px solid var(--line); }
+  .ck.lv-err { border-left-color:var(--red); background:var(--red-soft); }
+  .ck.lv-warn { border-left-color:var(--amber); background:var(--amber-soft); }
+  .ck.lv-info { border-left-color:var(--blue); }
+  .ck .ckd { flex:1; min-width:0; }
+  .ck .ckd b { display:block; font-size:14px; }
+  .ck .ckd span { font-size:13px; color:var(--ink); opacity:.85; overflow-wrap:anywhere; }
+  .ck .ckwhen { font-size:12px; color:var(--muted); white-space:nowrap; padding-top:2px; min-width:64px; }
+  .ck .btn { white-space:nowrap; }
+  .ckok { padding:14px; border-radius:12px; background:var(--green-soft); color:var(--green-ink); font-weight:600; }
+  .ckign { margin-top:10px; font-size:13px; }
+  .ckign summary { cursor:pointer; color:var(--muted); }
+  .ckign .ck { opacity:.65; }
+  details.jr { background:var(--card); border-radius:12px; box-shadow:var(--shadow-sm), 0 0 0 1px var(--line); margin-bottom:8px; }
+  details.jr > summary { cursor:pointer; list-style:none; padding:11px 14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  details.jr > summary::-webkit-details-marker { display:none; }
+  details.jr > summary::before { content:"▸"; color:var(--muted); }
+  details.jr[open] > summary::before { content:"▾"; }
+  details.jr[open] > summary { border-bottom:1px solid var(--line); }
+  details.jr.undone > summary b { text-decoration:line-through; opacity:.6; }
+  .jrwhen { font-size:12.5px; color:var(--muted); min-width:92px; }
+  .jrc { font-size:12.5px; color:var(--muted); }
+  .jrc i { font-style:normal; font-weight:700; color:var(--ink); }
+  .jrbody { padding:10px 16px 14px; font-size:13px; }
+  .jrbody h4 { margin:12px 0 6px; font-size:13px; }
+  .jrbody h4:first-child { margin-top:0; }
+  .jrev { padding:4px 0; border-bottom:1px dashed var(--line); }
+  .jrev .k { display:inline-block; font-size:11px; font-weight:700; border-radius:6px; padding:1px 7px; margin-right:6px; }
+  .jrev .k.added { background:var(--green-soft); color:var(--green-ink); }
+  .jrev .k.updated { background:var(--blue-soft); color:var(--blue-ink); }
+  .jrev .k.removed { background:var(--red-soft); color:var(--red-ink); }
+  .jrev ul { margin:3px 0 0 18px; padding:0; color:var(--muted); }
+  .jrev ul b { color:var(--ink); font-weight:600; }
+  .jrbar { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
   .hday { margin:24px 0 10px; font-size:16px; text-transform:capitalize; }
   .hday:first-child { margin-top:4px; }
   .hroute { display:grid; grid-template-columns:minmax(0,175px) 22px minmax(0,175px); align-items:baseline; flex:none; max-width:100%; }
@@ -440,6 +478,7 @@
   <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></symbol>
   <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
   <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></symbol>
 </svg>
 <header>
@@ -451,6 +490,7 @@
     <button data-tab="inventaire"><svg><use href="#i-list"/></svg>Inventaire</button>
     <button data-tab="mouvement"><svg><use href="#i-move"/></svg>Déplacer</button>
     <button data-tab="historique"><svg><use href="#i-clock"/></svg>Historique</button>
+    <button data-tab="controle"><svg><use href="#i-check"/></svg>Contrôle<span class="navcount" id="ckCount"></span></button>
     <button data-tab="admin"><svg><use href="#i-gear"/></svg>Gestion</button>
   </nav>
   <div class="theme" id="theme" title="Apparence"><button data-t="auto">Auto</button><button data-t="light">Clair</button><button data-t="dark">Sombre</button></div>
@@ -549,6 +589,21 @@
   <section id="tab-historique" class="hidden">
     <p class="muted" style="margin:0 0 12px">Un déplacement par ligne : clique dessus pour voir le matériel concerné.</p>
     <div id="histList"></div>
+  </section>
+
+  <section id="tab-controle" class="hidden">
+    <div class="card">
+      <h2 style="display:flex;align-items:center;gap:10px">À vérifier <span class="muted" id="ckSum" style="font-size:13px;font-weight:500"></span>
+        <button class="btn ghost small" id="ckReload" style="margin-left:auto">↻ Actualiser</button></h2>
+      <p class="muted" style="margin:-4px 0 12px;font-size:13px">Ce que l'application a repéré d'incohérent dans le planning, les fiches techniques et le stock (aujourd'hui → 3 semaines). « Ignorer » cache une alerte tant que rien ne change.</p>
+      <div id="ckList"></div>
+      <details id="ckIgnoredBox" class="ckign" style="display:none"><summary></summary><div id="ckIgnored"></div></details>
+    </div>
+    <div class="card">
+      <h2>Journal des imports</h2>
+      <p class="muted" style="margin:-4px 0 12px;font-size:13px">Chaque BEO Book, BEO ou fiche technique importé (et chaque fiche supprimée) : ce qu'il a changé, le PDF reçu, et la possibilité de l'annuler.</p>
+      <div id="jrList"></div>
+    </div>
   </section>
 
   <section id="tab-admin" class="hidden">
@@ -697,6 +752,15 @@
   <div class="row" style="margin-top:18px;justify-content:flex-end">
     <button type="button" class="btn ghost" id="retCancel">Annuler</button>
     <button type="button" class="btn" id="retGo">Retirer</button>
+  </div>
+</dialog>
+<dialog id="undoDlg">
+  <h2>Annuler cet import ?</h2>
+  <div id="undoBody" style="width:min(620px,88vw);max-height:60vh;overflow:auto;font-size:14px"></div>
+  <p class="warn" id="undoErr"></p>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button type="button" class="btn ghost" id="undoCancel">Ne rien changer</button>
+    <button type="button" class="btn" id="undoGo">Annuler l'import</button>
   </div>
 </dialog>
 <div class="toast" id="toast"></div>
@@ -1103,6 +1167,137 @@ async function loadHistory() {
   }).join('') || emptyState('Aucun mouvement pour l\'instant', 'Les déplacements de matériel apparaîtront ici.');
 }
 
+// ----- Contrôle : alertes « À vérifier » + journal des imports
+const CK = { data: null, journal: [] };
+const ddmm = (d) => (d ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : '');
+function ckCountUpdate(d) {
+  const n = d.items.filter((x) => x.level !== 'info').length, err = d.items.some((x) => x.level === 'err');
+  $('#ckCount').textContent = n || ''; $('#ckCount').classList.toggle('err', err);
+  $('#ckCount').title = n ? `${n} point${n > 1 ? 's' : ''} à vérifier` : '';
+}
+async function refreshChecks() { try { CK.data = await api('/api/checks'); ckCountUpdate(CK.data); } catch {} return CK.data; }
+function ckRow(x, ignored) {
+  const go = x.event_id || x.date ? `<button class="btn ghost small" data-ckgo="${esc(x.key)}">Voir</button>` : '';
+  const act = ignored ? `<button class="btn ghost small" data-ckrestore="${esc(x.key)}">Ne plus ignorer</button>` : `<button class="btn ghost small" data-ckdismiss="${esc(x.key)}" title="Cacher cette alerte tant que rien ne change">Ignorer</button>`;
+  return `<div class="ck lv-${x.level}"><span class="ckwhen">${x.date ? esc(dayLabel(x.date)) : ''}</span>
+    <div class="ckd"><b>${esc(x.title)}</b><span>${esc(x.detail)}</span></div>${go}${act}</div>`;
+}
+function renderChecks() {
+  const d = CK.data; if (!d) return;
+  const n = (l) => d.items.filter((x) => x.level === l).length;
+  $('#ckSum').textContent = d.items.length ? [n('err') && `${n('err')} problème${n('err') > 1 ? 's' : ''}`, n('warn') && `${n('warn')} à vérifier`, n('info') && `${n('info')} info${n('info') > 1 ? 's' : ''}`].filter(Boolean).join(' · ') : '';
+  $('#ckList').innerHTML = d.items.length ? d.items.map((x) => ckRow(x)).join('') : '<div class="ckok">✓ Rien à signaler : planning, fiches techniques et stock sont cohérents.</div>';
+  $('#ckIgnoredBox').style.display = d.dismissed.length ? '' : 'none';
+  $('#ckIgnoredBox summary').textContent = `${d.dismissed.length} alerte${d.dismissed.length > 1 ? 's' : ''} ignorée${d.dismissed.length > 1 ? 's' : ''}`;
+  $('#ckIgnored').innerHTML = d.dismissed.map((x) => ckRow(x, true)).join('');
+  ckCountUpdate(d);
+}
+const KIND_FR = { beo: '📄 BEO', offre: '📎 Fiche technique', 'offre-suppr': '🗑 Fiche supprimée' };
+function jrSummary(x) {
+  const c = x.counts, parts = [];
+  if (c.added) parts.push(`<i>+${c.added}</i> ajoutée${c.added > 1 ? 's' : ''}`);
+  if (c.updated) parts.push(`<i>${c.updated}</i> modifiée${c.updated > 1 ? 's' : ''}`);
+  if (c.removed) parts.push(`<i>−${c.removed}</i> retirée${c.removed > 1 ? 's' : ''}`);
+  return parts.length ? `${parts.join(' · ')} (cases du planning)` : 'aucune case du planning changée';
+}
+function renderJournal() {
+  $('#jrList').innerHTML = CK.journal.map((x) => `<details class="jr ${x.undone_ts ? 'undone' : ''}" data-jr="${x.id}">
+    <summary><span class="jrwhen" title="${esc(x.ts)}">${esc(dayLabel(x.ts.slice(0, 10)))} ${esc(x.ts.slice(11, 16))}</span>
+      <span class="tag2 ${x.kind === 'beo' ? 'mount' : x.kind === 'offre' ? 'in' : 'out'}">${KIND_FR[x.kind] || x.kind}</span>
+      <b>${esc(x.label || x.filename)}</b><span class="jrc">${jrSummary(x)}</span>
+      ${x.undone_ts ? `<span class="tag2 stk">annulé le ${esc(ddmm(x.undone_ts.slice(0, 10)))} à ${esc(x.undone_ts.slice(11, 16))}</span>` : ''}</summary>
+    <div class="jrbody">Chargement…</div></details>`).join('')
+    || emptyState('Aucun import pour l\'instant', 'Les prochains imports de BEO et de fiches techniques seront notés ici, avec ce qu\'ils ont changé.');
+}
+function jrDetailHtml(d) {
+  const ev = (e) => {
+    const k = { added: 'Ajoutée', updated: 'Modifiée', removed: 'Retirée' }[e.type];
+    const when = `${dayLabel(e.date)}${e.end_date && e.end_date !== e.date ? ` → ${dayLabel(e.end_date)}` : ''}`;
+    return `<div class="jrev"><span class="k ${e.type}">${k}</span><b>${esc(e.client)}</b> — ${esc(e.rooms.join(', ') || 'sans salle')} · ${esc(when)}${e.start ? ` · ${esc(e.start)}–${esc(e.end || '?')}` : ''}${e.type !== 'updated' && e.detail ? ` · <span class="muted">${esc(e.detail)}</span>` : ''}
+      ${e.fields.length ? `<ul>${e.fields.map((f) => `<li>${esc(f.what)} : ${esc(f.from)} → <b>${esc(f.to)}</b></li>`).join('')}</ul>` : ''}</div>`;
+  };
+  const order = { added: 0, updated: 1, removed: 2 };
+  const evs = d.events.slice().sort((a, b) => order[a.type] - order[b.type] || a.date.localeCompare(b.date));
+  // cases dont seuls les détails du BEO ont changé : regroupées en une ligne (sinon la liste est noyée)
+  const infoOnly = evs.filter((e) => e.type === 'updated' && e.fields.length === 1 && e.fields[0].what === 'Détails du BEO');
+  const main = evs.filter((e) => !infoOnly.includes(e));
+  return [
+    d.offers.length ? `<h4>Fiches techniques</h4>${d.offers.map((o) => `<div class="jrev"><span class="k ${o.type}">${{ added: 'Ajoutée', updated: 'Modifiée', removed: 'Retirée' }[o.type]}</span><b>${esc(o.client)}${o.version ? ' ' + esc(o.version) : ''}</b> — ${esc(o.rooms.join(', '))}</div>`).join('')}` : '',
+    d.archive.length ? `<h4>Archive des BEO</h4>${d.archive.map((a) => `<div class="jrev">${esc(a.week)} : ${a.before.length ? `${esc(a.before.join(', '))} → ` : ''}<b>${esc(a.after.join(', ') || 'plus rien')}</b></div>`).join('')}` : '',
+    main.length ? `<h4>Cases du planning</h4>${main.map(ev).join('')}` : '',
+    infoOnly.length ? `<div class="jrev muted">+ ${infoOnly.length} case${infoOnly.length > 1 ? 's' : ''} inchangée${infoOnly.length > 1 ? 's' : ''} dont les détails du BEO (agenda, section AV) ont été mis à jour</div>` : '',
+    !d.events.length && !d.offers.length && !d.archive.length ? '<p class="muted">Cet import n\'a rien changé.</p>' : '',
+    `<div class="jrbar">${d.has_pdf ? `<a class="btn ghost small" href="${apercuUrl(`/api/imports/${d.id}/pdf`, d.filename || d.label)}" target="_blank" rel="noopener">📄 PDF importé</a>` : ''}
+      ${d.undone_ts ? `<span class="muted">Annulé le ${esc(ddmm(d.undone_ts.slice(0, 10)))} à ${esc(d.undone_ts.slice(11, 16))}.</span>` : `<button class="btn ghost small" data-jrundo="${d.id}" style="color:var(--err)">↩ Annuler cet import…</button>`}</div>`,
+  ].join('');
+}
+async function loadControle() {
+  try {
+    const [c, j] = await Promise.all([api('/api/checks'), api('/api/imports')]);
+    CK.data = c; CK.journal = j;
+    renderChecks(); renderJournal();
+  } catch (err) { toast(err.message, true); }
+}
+$('#ckReload').onclick = loadControle;
+$('#tab-controle').addEventListener('click', async (e) => {
+  const dis = e.target.closest('[data-ckdismiss],[data-ckrestore]');
+  if (dis) {
+    try { CK.data = await api('/api/checks/dismiss', { key: dis.dataset.ckdismiss || dis.dataset.ckrestore, restore: !!dis.dataset.ckrestore }); renderChecks(); }
+    catch (err) { toast(err.message, true); }
+    return;
+  }
+  const go = e.target.closest('[data-ckgo]');
+  if (go) {
+    const x = [...CK.data.items, ...CK.data.dismissed].find((y) => y.key === go.dataset.ckgo); if (!x) return;
+    document.querySelector('nav button[data-tab="planning"]').click();
+    await loadPlanning(true);
+    PL.week = weekStart(x.date || isoToday()); PL.day = x.date || null; $('#plQ').value = '';
+    const ev = x.event_id && PL.events.find((y) => y.id === x.event_id);
+    if (ev && ev.room_ids.length && PL.view === 'grid') PL.gridArea = areaOf(D.locations.find((l) => l.id === ev.room_ids[0])) || PL.gridArea;
+    renderPlanning();
+    if (ev) openEvent(ev);
+    return;
+  }
+  const un = e.target.closest('[data-jrundo]');
+  if (un) return openImportUndo(Number(un.dataset.jrundo));
+});
+$('#jrList').addEventListener('toggle', async (e) => {
+  const det = e.target; if (!det.open || det.dataset.loaded) return;
+  try { det.querySelector('.jrbody').innerHTML = jrDetailHtml(await api('/api/imports/detail', { id: Number(det.dataset.jr) })); det.dataset.loaded = '1'; }
+  catch (err) { det.querySelector('.jrbody').textContent = err.message; }
+}, true);
+// Annulation : d'abord un aperçu (ce qui bloque, ce qui a été modifié depuis), puis confirmation
+const UNDO = { id: null, force: false };
+async function openImportUndo(id) {
+  UNDO.id = id; UNDO.force = false;
+  $('#undoErr').textContent = ''; $('#undoBody').innerHTML = 'Vérification…'; $('#undoGo').disabled = true;
+  $('#undoDlg').showModal();
+  try {
+    const r = await api('/api/imports/undo', { id, dry: true });
+    const x = CK.journal.find((y) => y.id === id);
+    const s = r.summary;
+    let html = `<p style="margin-top:0"><b>${esc(x?.label || '')}</b><br><span class="muted">Tout ce que cet import a changé sera remis comme avant : ${s.events} case${s.events > 1 ? 's' : ''} du planning${s.offers ? `, ${s.offers} fiche${s.offers > 1 ? 's' : ''} technique${s.offers > 1 ? 's' : ''}` : ''}, et les PDF qu'il avait remplacés. Le PDF importé reste consultable dans le journal.</span></p>`;
+    if (r.blockers.length) html += `<div class="ck lv-err"><div class="ckd"><b>Impossible d'annuler pour l'instant</b>${r.blockers.map((b) => `<span style="display:block;margin-top:4px">• ${esc(b)}</span>`).join('')}</div></div>`;
+    if (r.conflicts.length) html += `<div class="ck lv-warn"><div class="ckd"><b>Modifié depuis l'import</b>${r.conflicts.map((c) => `<span style="display:block;margin-top:4px">• ${esc(c.what)} : ${esc(c.why)}</span>`).join('')}</div></div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="undoForce"> J'ai vérifié : annuler quand même</label>`;
+    $('#undoBody').innerHTML = html;
+    $('#undoGo').disabled = !!r.blockers.length || !!r.conflicts.length;
+    $('#undoForce')?.addEventListener('change', (ev) => { UNDO.force = ev.target.checked; $('#undoGo').disabled = !UNDO.force; });
+  } catch (err) { $('#undoBody').innerHTML = ''; $('#undoErr').textContent = err.message; }
+}
+$('#undoCancel').onclick = () => $('#undoDlg').close();
+$('#undoGo').onclick = async () => {
+  $('#undoGo').disabled = true;
+  try {
+    const r = await api('/api/imports/undo', { id: UNDO.id, force: UNDO.force });
+    if (!r.done) { $('#undoErr').textContent = 'L\'import n\'a pas été annulé : la situation a changé, réessaie.'; return; }
+    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    $('#undoDlg').close();
+    toast(r.errors?.length ? `Import annulé, mais : ${r.errors.join(' ; ')}` : 'Import annulé ✔ : tout est revenu comme avant', !!r.errors?.length);
+    await loadControle();
+  } catch (err) { $('#undoErr').textContent = err.message; $('#undoGo').disabled = false; }
+};
+
 // Navigation
 $('#nav').addEventListener('click', (e) => {
   const btn = e.target.closest('[data-tab]'); if (!btn) return;
@@ -1110,6 +1305,7 @@ $('#nav').addEventListener('click', (e) => {
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b === btn));
   document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('hidden', s.id !== 'tab-' + t));
   if (t === 'historique') loadHistory();
+  if (t === 'controle') loadControle();
   if (t === 'admin') loadRetired();
   if (t === 'planning') loadPlanning();
   document.body.classList.toggle('plwide', t === 'planning');
@@ -1610,6 +1806,8 @@ function renderGrid(days, weekEvs, hit, today) {
 }
 
 function renderPlanning() {
+  // le planning a changé (import, modification, autre poste) : le compteur « Contrôle » est recalculé
+  if (PL.status?.version !== CK.version) { CK.version = PL.status?.version; refreshChecks(); }
   $('#plSource').innerHTML = planningSourceHtml();
   const today = isoToday();
   if (!PL.week) PL.week = weekStart(today);
@@ -2202,7 +2400,7 @@ $('#pdfGo').onclick = async () => {
     renderPlanning();
     if (r.skipped.length) { $('#pdfErr').textContent = `${r.added + r.updated} importés, ${r.skipped.length} ignorés : ${r.skipped.slice(0, 3).join(' ; ')}`; return; }
     const parts = [r.added && `${r.added} ajouté${r.added > 1 ? 's' : ''}`, r.updated && `${r.updated} mis à jour`, r.removed && `${r.removed} retiré${r.removed > 1 ? 's' : ''}`].filter(Boolean);
-    $('#pdfDlg').close(); toast(`${PDFI.kind === 'book' ? 'BEO Book' : 'BEO'} ${r.archived ? 'archivé' : 'importé'} ✔${parts.length ? ' — ' + parts.join(', ') : ''}`);
+    $('#pdfDlg').close(); toast(`${PDFI.kind === 'book' ? 'BEO Book' : 'BEO'} ${r.archived ? 'archivé' : 'importé'} ✔${parts.length ? ' — ' + parts.join(', ') : ''} · noté dans Contrôle → Journal`);
   } catch (err) { $('#pdfErr').textContent = err.message; }
 };
 
@@ -2298,7 +2496,7 @@ $('#ofBody').addEventListener('click', async (e) => {
     try {
       const r = await api('/api/offers/delete', { id });
       PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
-      OF.confirmDel = null; renderOfList(); renderPlanning(); toast('Offre supprimée');
+      OF.confirmDel = null; renderOfList(); renderPlanning(); toast('Offre supprimée · annulable dans Contrôle → Journal');
     } catch (err) { $('#ofErr').textContent = err.message; }
     return;
   }
@@ -2339,7 +2537,7 @@ $('#ofSave').onclick = async () => {
     const first = d.rooms.filter((x) => x.setup && !x.skip).map((x) => x.setup).sort()[0];
     if (first) { PL.week = weekStart(first); PL.day = first; }
     $('#ofDlg').close(); renderPlanning();
-    toast(`Offre enregistrée ✔${first ? ` — montage le ${dayLabel(first)}` : ''}`);
+    toast(`Offre enregistrée ✔${first ? ` — montage le ${dayLabel(first)}` : ''} · noté dans Contrôle → Journal`);
   } catch (err) { $('#ofErr').textContent = err.message; }
 };
 

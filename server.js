@@ -389,16 +389,18 @@ function previewBeoPdf(buf, filename) {
 // Archive le PDF validé dans le dossier de sa semaine, en ne gardant que la dernière version :
 // - BEO Book complet : remplace l'ancien Book de la semaine + les BEO isolés qu'il contient
 // - BEO isolé(s) : remplace seulement les anciennes versions de ces mêmes BEO (le Book de la semaine n'est pas touché)
-function archiveBeo(token, filename, from, to, kind, beos) {
+// j : import en cours (journal) → l'ancienne version est mise de côté plutôt que supprimée (annulation possible)
+function archiveBeo(token, filename, from, to, kind, beos, j) {
   const src = beoTmp(token);
   if (!fs.existsSync(src) || !from) return null;
+  j?.source(src);
   const nums = beoNums(beos);
   const wk = isoWeek(from);
   const dir = path.join(BEO_DIR, wk.folder);
   fs.mkdirSync(dir, { recursive: true });
   const arch = beoArchive();
   const w = (arch.weeks[wk.key] ||= { folder: wk.folder, label: wk.label, book: null, parts: [] });
-  const drop = (entry) => { if (entry) fs.rmSync(path.join(BEO_DIR, entry.file), { force: true }); };
+  const drop = (entry) => { if (!entry) return; const f = path.join(BEO_DIR, entry.file); if (j) j.keep(f); else fs.rmSync(f, { force: true }); };
   const safe = (s) => String(s).replace(/[<>:"/\\|?*]/g, '_').trim();
   let name = safe(path.basename(filename || '') || 'BEO.pdf');
   if (!/\.pdf$/i.test(name)) name += '.pdf';
@@ -414,6 +416,7 @@ function archiveBeo(token, filename, from, to, kind, beos) {
   // un autre fichier de la semaine porte déjà ce nom : on le distingue
   if (fs.existsSync(path.join(dir, name))) name = name.replace(/\.pdf$/i, ` (${now.slice(0, 16).replace(/[:T]/g, '-')}).pdf`);
   fs.renameSync(src, path.join(dir, name));
+  j?.created.push(path.join(dir, name));
   const entry = { file: path.join(wk.folder, name), original: filename || name, imported_at: now, from, to, beos: nums };
   if (kind === 'book') w.book = entry; else w.parts.push(entry);
   metaSet('beo_archive', JSON.stringify(arch));
@@ -589,7 +592,7 @@ function undoOffer(offerId) {
   }
 }
 
-function saveOffer(b) {
+function saveOffer(b, j) {
   const src = tmpFile(b.token);
   if (!fs.existsSync(src)) throw new Error('Envoi expiré : choisis à nouveau le fichier');
   const client = String(b.client || '').trim();
@@ -623,9 +626,11 @@ function saveOffer(b) {
       .run(b.filename || '', client, b.version || '', b.title || '', b.dated || '', JSON.stringify(rooms), JSON.stringify(b.services || []), JSON.stringify(links), rel).lastInsertRowid);
     bumpPlanning();
   });
-  const same = (f) => path.resolve(f).toLowerCase() === path.resolve(dest).toLowerCase();
-  for (const f of oldFiles) if (!same(f)) fs.rmSync(f, { force: true });
-  fs.renameSync(src, dest); // remplace l'ancienne version si elle portait le même nom
+  j?.source(src);
+  // anciennes versions : mises de côté dans le journal (annulation possible), sinon supprimées
+  for (const f of oldFiles) { if (j) j.keep(f); else fs.rmSync(f, { force: true }); }
+  fs.renameSync(src, dest);
+  j?.created.push(dest);
   return id;
 }
 
@@ -775,6 +780,348 @@ function resolveCategory(input) {
   return clean.charAt(0).toUpperCase() + clean.slice(1);
 }
 
+// ---------------------------------------------------------------- Journal des imports
+// Chaque import (BEO Book, BEO, fiche technique) et chaque suppression de fiche est noté avec l'état « avant / après »
+// de tout ce qu'il a touché : cases du planning, fiches, archive des BEO, fichiers PDF. On peut ainsi voir exactement
+// ce que l'import a changé, et l'annuler. Les PDF remplacés ne sont pas supprimés : ils sont mis de côté dans
+// fichiers/journal/<n°>/ (avec une copie du PDF importé), pour pouvoir les remettre.
+db.exec(`
+CREATE TABLE IF NOT EXISTS import_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  kind TEXT NOT NULL,              -- 'beo' | 'offre' | 'offre-suppr'
+  filename TEXT, label TEXT,
+  changes TEXT NOT NULL DEFAULT '{}',
+  undone_ts TEXT
+);
+`);
+const FILES_DIR = path.join(DATA_DIR, 'fichiers');
+const JOURNAL_DIR = path.join(FILES_DIR, 'journal');
+const relFile = (abs) => path.relative(FILES_DIR, abs);
+const absFile = (rel) => {
+  const p = path.resolve(FILES_DIR, String(rel || ''));
+  if (!p.startsWith(FILES_DIR + path.sep)) throw new Error('Chemin de fichier invalide');
+  return p;
+};
+const snapTable = (t) => new Map(db.prepare(`SELECT * FROM ${t}`).all().map((r) => [r.id, r]));
+const sameRow = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function diffTable(before, after) {
+  const out = [];
+  for (const [id, a] of after) { const b = before.get(id); if (!b || !sameRow(b, a)) out.push({ id, before: b || null, after: a }); }
+  for (const [id, b] of before) if (!after.has(id)) out.push({ id, before: b, after: null });
+  return out;
+}
+// Début d'un import : photo de l'état actuel. j.keep(fichier) met un fichier remplacé de côté, j.source(fichier) garde une copie du PDF importé.
+function startImport(kind, filename, label) {
+  const id = Number(db.prepare('INSERT INTO import_log (kind, filename, label) VALUES (?,?,?)').run(kind, filename || '', label || '').lastInsertRowid);
+  const dir = path.join(JOURNAL_DIR, String(id));
+  const j = { id, dir, ev: snapTable('planning_events'), of: snapTable('offers'), arch: metaJson('beo_archive'), created: [], replaced: [], src: null };
+  j.keep = (abs) => {
+    if (!fs.existsSync(abs)) return;
+    fs.mkdirSync(dir, { recursive: true });
+    const saved = path.join(dir, `remplace-${j.replaced.length + 1}.pdf`);
+    fs.renameSync(abs, saved);
+    j.replaced.push({ rel: relFile(abs), saved: relFile(saved) });
+  };
+  j.source = (abs) => {
+    if (!fs.existsSync(abs)) return;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(abs, path.join(dir, 'source.pdf'));
+    j.src = relFile(path.join(dir, 'source.pdf'));
+  };
+  return j;
+}
+function finishImport(j, label) {
+  const archAfter = metaJson('beo_archive');
+  const archive = {};
+  for (const k of new Set([...Object.keys(j.arch.weeks || {}), ...Object.keys(archAfter.weeks || {})])) {
+    const b = j.arch.weeks?.[k] || null, a = archAfter.weeks?.[k] || null;
+    if (!sameRow(b, a)) archive[k] = { before: b, after: a };
+  }
+  const changes = {
+    events: diffTable(j.ev, snapTable('planning_events')), offers: diffTable(j.of, snapTable('offers')), archive,
+    files: { created: j.created.map(relFile), replaced: j.replaced }, source: j.src,
+  };
+  db.prepare('UPDATE import_log SET changes=?, label=COALESCE(?, label) WHERE id=?').run(JSON.stringify(changes), label || null, j.id);
+}
+// L'import a échoué : on remet les fichiers mis de côté et on efface la ligne du journal
+function abortImport(j) {
+  for (const r of j.replaced.slice().reverse()) { try { fs.renameSync(absFile(r.saved), absFile(r.rel)); } catch {} }
+  db.prepare('DELETE FROM import_log WHERE id=?').run(j.id);
+  fs.rmSync(j.dir, { recursive: true, force: true });
+}
+function journaled(kind, filename, label, fn) {
+  const j = startImport(kind, filename, label);
+  try { const out = fn(j); finishImport(j, typeof out?.label === 'string' ? out.label : null); return { ...out, journal_id: j.id }; }
+  catch (e) { abortImport(j); throw e; }
+}
+
+// ---- Lecture du journal : ce qui a changé, en clair
+const COLOR_FR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
+const jsonOr = (s, d) => { try { return JSON.parse(s) ?? d; } catch { return d; } };
+const dmy = (d) => (isDate(d) ? `${d.slice(8, 10)}/${d.slice(5, 7)}` : d || '');
+function eventFieldDiffs(b, a) {
+  const out = [];
+  const push = (what, from, to) => { if (from !== to) out.push({ what, from: from || '—', to: to || '—' }); };
+  push('Société', b.client, a.client);
+  push('Date', b.date === b.end_date ? dmy(b.date) : `${dmy(b.date)} → ${dmy(b.end_date)}`, a.date === a.end_date ? dmy(a.date) : `${dmy(a.date)} → ${dmy(a.end_date)}`);
+  push('Salle', jsonOr(b.rooms, []).join(', '), jsonOr(a.rooms, []).join(', '));
+  push('Horaire', b.start || b.end ? `${b.start || '?'}–${b.end || '?'}` : '', a.start || a.end ? `${a.start || '?'}–${a.end || '?'}` : '');
+  push('Description', b.detail, a.detail);
+  push('Statut', COLOR_FR[b.color] || 'Sans couleur', COLOR_FR[a.color] || 'Sans couleur');
+  push('Étiquettes', jsonOr(b.tags, []).join(', '), jsonOr(a.tags, []).join(', '));
+  push('Validé', jsonOr(b.done, []).join(', '), jsonOr(a.done, []).join(', '));
+  push('Important', b.urgent ? 'oui' : 'non', a.urgent ? 'oui' : 'non');
+  if ((b.info || '') !== (a.info || '')) out.push({ what: 'Détails du BEO', from: b.info ? 'anciens' : '—', to: a.info ? 'mis à jour (agenda, section AV)' : '—' });
+  return out;
+}
+function describeImport(row) {
+  const ch = jsonOr(row.changes, {});
+  const ev = (ch.events || []).map((c) => {
+    const r = c.after || c.before;
+    return {
+      id: c.id, type: !c.before ? 'added' : !c.after ? 'removed' : 'updated',
+      date: r.date, end_date: r.end_date, rooms: jsonOr(r.rooms, []), client: r.client, start: r.start, end: r.end, detail: r.detail,
+      fields: c.before && c.after ? eventFieldDiffs(c.before, c.after) : [],
+    };
+  }).sort((a, b) => a.date.localeCompare(b.date) || a.rooms.join().localeCompare(b.rooms.join()));
+  const of = (ch.offers || []).map((c) => {
+    const r = c.after || c.before;
+    return { id: c.id, type: !c.before ? 'added' : !c.after ? 'removed' : 'updated', client: r.client, version: r.version, filename: r.filename,
+      rooms: jsonOr(r.rooms, []).filter((x) => !x.skip).map((x) => x.name) };
+  });
+  const ar = Object.entries(ch.archive || {}).map(([k, w]) => {
+    const files = (x) => x ? [x.book && `BEO Book : ${x.book.original}`, ...(x.parts || []).map((p) => `BEO ${p.beos.join(', ')} : ${p.original}`)].filter(Boolean) : [];
+    return { week: (w.after || w.before)?.label || k, before: files(w.before), after: files(w.after) };
+  });
+  const count = (t) => ev.filter((e) => e.type === t).length;
+  return {
+    id: row.id, ts: row.ts, kind: row.kind, filename: row.filename, label: row.label, undone_ts: row.undone_ts,
+    counts: { added: count('added'), updated: count('updated'), removed: count('removed'), offers: of.length },
+    has_pdf: !!(ch.source && fs.existsSync(absFile(ch.source))), events: ev, offers: of, archive: ar,
+  };
+}
+function importsList() {
+  return db.prepare('SELECT * FROM import_log ORDER BY id DESC LIMIT 300').all().map((r) => {
+    const d = describeImport(r);
+    return { ...d, events: undefined, offers: undefined, archive: undefined };
+  });
+}
+
+// ---- Annulation d'un import : on remet ce que l'import a changé — et seulement ça.
+// - case modifiée par l'import : seuls les champs changés par l'import sont remis, s'ils n'ont pas bougé depuis ;
+//   sinon c'est un « conflit » (à confirmer : la valeur actuelle sera écrasée)
+// - case créée par l'import : supprimée (conflit si elle a été modifiée depuis ; bloqué si du matériel y a été validé)
+// - fiches / archive des BEO : remises seulement si personne n'y a touché depuis (sinon : annuler d'abord l'import plus récent)
+const EV_LABELS = { date: 'date', end_date: 'date de fin', rooms: 'salle', room_ids: 'salle', client: 'société', detail: 'description',
+  start: 'heure de début', end: 'heure de fin', tags: 'étiquettes', color: 'statut', urgent: 'important', info: 'détails du BEO', done: 'validation' };
+const evName = (r) => `${r.client || '?'} — ${jsonOr(r.rooms, []).join(', ') || 'sans salle'}, ${dmy(r.date)}`;
+function planUndo(row) {
+  const ch = jsonOr(row.changes, {});
+  const blockers = [], conflicts = [], ops = [];
+  for (const c of ch.events || []) {
+    const cur = db.prepare('SELECT * FROM planning_events WHERE id=?').get(c.id) || null;
+    const name = evName(c.after || c.before);
+    if (!c.before) { // créée par l'import → supprimée
+      if (!cur) continue;
+      if (db.prepare('SELECT 1 FROM offer_moves WHERE event_id=?').get(c.id)) {
+        blockers.push(`${name} : du matériel a été validé (« Prêt ») dans cette case — annule d'abord cette validation dans le planning`);
+        continue;
+      }
+      const changed = Object.keys(c.after).filter((f) => f !== 'id' && cur[f] !== c.after[f]);
+      if (changed.length) conflicts.push({ what: name, why: `modifiée depuis l'import (${[...new Set(changed.map((f) => EV_LABELS[f] || f))].join(', ')}) : elle sera quand même supprimée` });
+      ops.push({ t: 'evdel', id: c.id, conflict: changed.length > 0 });
+    } else if (!c.after) { // retirée par l'import → remise
+      if (!cur) ops.push({ t: 'evins', row: c.before });
+    } else {
+      if (!cur) { conflicts.push({ what: name, why: 'supprimée depuis l\'import : elle ne sera pas remise' }); continue; }
+      const set = {}, forced = {};
+      for (const f of Object.keys(c.before)) {
+        if (f === 'id' || c.before[f] === c.after[f]) continue;
+        if (cur[f] === c.after[f]) set[f] = c.before[f]; else if (cur[f] !== c.before[f]) forced[f] = c.before[f];
+      }
+      if (Object.keys(forced).length) conflicts.push({ what: name, why: `modifiée depuis l'import (${[...new Set(Object.keys(forced).map((f) => EV_LABELS[f] || f))].join(', ')}) : la valeur d'avant l'import sera remise` });
+      if (Object.keys(set).length || Object.keys(forced).length) ops.push({ t: 'evset', id: c.id, set, forced });
+    }
+  }
+  for (const c of ch.offers || []) {
+    const cur = db.prepare('SELECT * FROM offers WHERE id=?').get(c.id) || null;
+    const r = c.after || c.before;
+    const name = `Fiche technique ${r.client}${r.version ? ' ' + r.version : ''}`;
+    if (c.after && !sameRow(cur, c.after)) { blockers.push(`${name} : remplacée, supprimée ou modifiée depuis — annule d'abord l'import le plus récent`); continue; }
+    if (!c.after && cur) { blockers.push(`${name} : elle existe de nouveau — annule d'abord l'import le plus récent`); continue; }
+    ops.push(c.before ? { t: 'ofput', row: c.before } : { t: 'ofdel', id: c.id });
+  }
+  const arch = metaJson('beo_archive');
+  for (const [k, w] of Object.entries(ch.archive || {})) {
+    if (!sameRow(arch.weeks?.[k] || null, w.after)) { blockers.push(`Archive des BEO de la ${(w.after || w.before)?.label || k} : un BEO plus récent a été importé depuis — annule d'abord cet import-là`); continue; }
+    ops.push({ t: 'arch', key: k, before: w.before });
+  }
+  for (const r of ch.files?.replaced || []) {
+    if (!fs.existsSync(absFile(r.saved))) blockers.push(`Le fichier mis de côté « ${path.basename(r.rel)} » est introuvable dans le journal`);
+  }
+  return { blockers, conflicts, ops, files: ch.files || { created: [], replaced: [] } };
+}
+function undoImport(b) {
+  const row = db.prepare('SELECT * FROM import_log WHERE id=?').get(Number(b.id));
+  if (!row) throw new Error('Import introuvable dans le journal');
+  if (row.undone_ts) throw new Error(`Cet import a déjà été annulé (le ${row.undone_ts.slice(0, 16)})`);
+  const plan = planUndo(row);
+  const summary = { events: plan.ops.filter((o) => o.t.startsWith('ev')).length, offers: plan.ops.filter((o) => o.t.startsWith('of')).length };
+  if (b.dry || plan.blockers.length || (plan.conflicts.length && !b.force)) {
+    return { done: false, blockers: plan.blockers, conflicts: plan.conflicts, summary };
+  }
+  const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+  const put = (t, r) => { const k = cols(t).filter((c) => c in r); db.prepare(`INSERT OR REPLACE INTO ${t} (${k.join(',')}) VALUES (${k.map(() => '?').join(',')})`).run(...k.map((c) => r[c])); };
+  inTransaction(() => {
+    for (const o of plan.ops) {
+      if (o.t === 'evdel') db.prepare('DELETE FROM planning_events WHERE id=?').run(o.id);
+      else if (o.t === 'evins') put('planning_events', o.row);
+      else if (o.t === 'evset') {
+        const s = { ...o.set, ...o.forced }; const k = Object.keys(s);
+        db.prepare(`UPDATE planning_events SET ${k.map((c) => `${c}=?`).join(', ')} WHERE id=?`).run(...k.map((c) => s[c]), o.id);
+      } else if (o.t === 'ofdel') db.prepare('DELETE FROM offers WHERE id=?').run(o.id);
+      else if (o.t === 'ofput') put('offers', o.row);
+      else if (o.t === 'arch') {
+        const a = beoArchive();
+        if (o.before) a.weeks[o.key] = o.before; else delete a.weeks[o.key];
+        metaSet('beo_archive', JSON.stringify(a));
+      }
+    }
+    db.prepare("UPDATE import_log SET undone_ts=datetime('now','localtime') WHERE id=?").run(row.id);
+    bumpPlanning();
+  });
+  // fichiers : ceux créés par l'import sont mis de côté dans le journal, ceux qu'il avait remplacés reviennent à leur place
+  const dir = path.join(JOURNAL_DIR, String(row.id));
+  const errors = [];
+  plan.files.created.forEach((rel, i) => {
+    try { const f = absFile(rel); if (fs.existsSync(f)) { fs.mkdirSync(dir, { recursive: true }); fs.renameSync(f, path.join(dir, `annule-${i + 1}.pdf`)); } }
+    catch (e) { errors.push(e.message); }
+  });
+  for (const r of plan.files.replaced) {
+    try { const dest = absFile(r.rel); fs.mkdirSync(path.dirname(dest), { recursive: true }); fs.renameSync(absFile(r.saved), dest); }
+    catch (e) { errors.push(e.message); }
+  }
+  return { done: true, errors, summary, ...planningData() };
+}
+
+// ---------------------------------------------------------------- Contrôle : ce qui mérite un coup d'œil
+// Liste calculée à chaque demande (rien n'est enregistré, sauf les alertes « ignorées »). Chaque alerte a une clé
+// qui change si la situation change : une alerte ignorée revient si les données concernées bougent.
+const localToday = () => { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+const addDaysIso = (d, n) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+function checksList() {
+  const today = localToday(), horizon = addDaysIso(today, 21);
+  const pd = planningData();
+  const evs = pd.events;
+  const names = new Map(db.prepare('SELECT id, name, kind FROM locations').all().map((l) => [l.id, l]));
+  const rn = (ids) => ids.map((id) => names.get(id)?.name || '?').join(' + ');
+  const offerRows = db.prepare('SELECT id, client, version, rooms, links FROM offers').all();
+  const linked = new Map(); // événement → liens créés par une offre
+  for (const o of offerRows) for (const l of jsonOr(o.links, [])) (linked.get(l.id) || linked.set(l.id, []).get(l.id)).push({ ...l, offer: o.id });
+  const createdByOffer = new Set([...linked].filter(([, ls]) => ls.some((l) => l.created)).map(([id]) => id));
+  const onDay = (e, d) => e.date <= d && d <= e.end_date;
+  const out = [];
+  const add = (level, type, key, o) => out.push({ level, type, key: `${type}:${key}`, ...o });
+
+  // 1. deux sociétés dans la même salle en même temps
+  const seen = new Set();
+  for (let d = today; d <= horizon; d = addDaysIso(d, 1)) {
+    const day = evs.filter((e) => onDay(e, d) && e.start && e.end && !createdByOffer.has(e.id));
+    for (const a of day) for (const b of day) {
+      if (a.id >= b.id || sameClient(a.client, b.client) || !(a.start < b.end && b.start < a.end)) continue;
+      const rooms = a.room_ids.filter((id) => b.room_ids.includes(id));
+      if (!rooms.length) continue;
+      const k = `${d}:${a.id}:${b.id}:${a.start}-${a.end}:${b.start}-${b.end}:${rooms}`;
+      if (seen.has(k)) continue; seen.add(k);
+      add('err', 'clash', k, { date: d, event_id: a.id, title: 'Deux sociétés dans la même salle en même temps',
+        detail: `${rn(rooms)} : ${a.client} (${a.start}–${a.end}) et ${b.client} (${b.start}–${b.end})` });
+    }
+  }
+  // 2. événement à venir sans salle reconnue
+  for (const e of evs) if (e.end_date >= today && !e.room_ids.length) {
+    add('err', 'noroom', `${e.id}:${e.rooms.join()}`, { date: e.date, event_id: e.id, title: 'Événement sans salle',
+      detail: `${e.client}${e.rooms.length ? ` (salle du BEO : « ${e.rooms.join(', ')} »)` : ''} — il n'apparaît dans aucune colonne de la grille` });
+  }
+  // 3. événement sans heure (hors montages / démontages créés par une fiche : c'est notre travail, sans horaire imposé)
+  for (const e of evs) if (!createdByOffer.has(e.id) && !e.start && e.end_date >= today && e.date <= horizon) {
+    add('warn', 'notime', `${e.id}`, { date: e.date, event_id: e.id, title: 'Événement sans heure', detail: `${e.client} — ${rn(e.room_ids)}` });
+  }
+  // 4. fiche technique : jours de show sans événement BEO de la même société dans la salle
+  for (const o of offerRows) for (const r of jsonOr(o.rooms, [])) {
+    if (r.skip || !r.room_ids?.length || !isDate(r.show_from)) continue;
+    const missing = [];
+    for (let d = r.show_from; d <= (r.show_to || r.show_from); d = addDaysIso(d, 1)) {
+      if (d < today || d > horizon) continue;
+      if (!evs.some((e) => onDay(e, d) && !createdByOffer.has(e.id) && sameClient(e.client, o.client) && e.room_ids.some((id) => r.room_ids.includes(id)))) missing.push(d);
+    }
+    if (missing.length) add('warn', 'offer_no_beo', `${o.id}:${r.name}:${missing}`, { date: missing[0], offer_id: o.id,
+      title: 'Fiche technique sans BEO correspondant', detail: `${o.client}${o.version ? ' ' + o.version : ''} — ${r.name || rn(r.room_ids)} : aucun BEO de cette société dans la salle le ${missing.map(dmy).join(', ')}` });
+  }
+  // 5. BEO qui renvoie à une offre (« VOIR OFFRE ») sans fiche technique importée — regroupé par société et salle
+  const refs = new Map();
+  for (const e of evs) {
+    if (createdByOffer.has(e.id) || e.end_date < today || e.date > horizon || !/offre/i.test(e.detail || '')) continue;
+    const has = offerRows.some((o) => sameClient(o.client, e.client) && jsonOr(o.rooms, []).some((r) => {
+      const first = r.setup || r.show_from, last = r.demontage || r.show_to || r.show_from;
+      return (r.room_ids || []).some((id) => e.room_ids.includes(id)) && first <= e.end_date && e.date <= last;
+    }));
+    if (has) continue;
+    const k = `${nz(e.client)}|${e.room_ids}`;
+    (refs.get(k) || refs.set(k, []).get(k)).push(e);
+  }
+  for (const list of refs.values()) {
+    const e = list[0];
+    const dates = [...new Set(list.map((x) => x.date))].sort();
+    add('warn', 'beo_offer', list.map((x) => `${x.id}:${x.detail}`).join(','), { date: dates[0], event_id: e.id, title: 'Le BEO renvoie à une fiche technique non importée',
+      detail: `${e.client} — ${rn(e.room_ids)}, le ${dates.map(dmy).join(', ')} : « ${[...new Set(list.map((x) => x.detail))].join(' / ')} »` });
+  }
+  // 6. montage / démontage d'une fiche passé mais pas validé (le stock de l'app n'a pas bougé)
+  for (const e of evs) {
+    if (!linked.has(e.id) || e.date >= today || e.date < addDaysIso(today, -14)) continue;
+    for (const p of PHASES) if (e.tags.includes(p) && !e.done.includes(p)) {
+      add('warn', 'phase', `${e.id}:${p}`, { date: e.date, event_id: e.id, title: `${p} pas validé`,
+        detail: `${e.client} — ${rn(e.room_ids)}, ${dmy(e.date)} : ${p === 'Montage' ? 'le matériel Dolce n\'a pas été sorti du stock dans l\'app' : 'le matériel est toujours compté dans la salle'}` });
+    }
+  }
+  // 7. matériel encore en salle alors que rien n'y est prévu aujourd'hui ni les 2 jours suivants
+  const inRoom = new Map(); // salle → ['2 × Pupitre', 'CAS (4 él.)']
+  for (const s of db.prepare("SELECT s.location_id, s.qty, i.name FROM stock s JOIN items i ON i.id=s.item_id JOIN locations l ON l.id=s.location_id WHERE l.kind='salle'").all()) {
+    (inRoom.get(s.location_id) || inRoom.set(s.location_id, []).get(s.location_id)).push(`${s.qty} × ${s.name}`);
+  }
+  const lastMove = new Map(); // offre + salle → dernière validation (montage / démontage) du matériel externe
+  for (const m of pd.offerMoves) for (const x of m.external) for (const id of x.room_ids || []) lastMove.set(`${x.offer_id}|${x.room_name}|${id}`, { phase: m.phase, x });
+  for (const [k, v] of lastMove) if (v.phase === 'Montage') {
+    const id = Number(k.split('|')[2]);
+    (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`matériel ${v.x.supplier || 'externe'}`);
+  }
+  for (const [id, mat] of inRoom) {
+    const soon = evs.some((e) => e.room_ids.includes(id) && e.end_date >= today && e.date <= addDaysIso(today, 2));
+    if (!soon) add('warn', 'idle', `${id}:${[...new Set(mat)].sort()}`, { date: today, room_id: id, title: 'Matériel en salle, rien de prévu',
+      detail: `${names.get(id)?.name} : ${[...new Set(mat)].join(', ')} — aucun événement aujourd'hui ni les 2 prochains jours` });
+  }
+  // 8. événements à venir dont le BEO n'a pas de section AV enregistrée (importés avant cette fonction) ou pas de PDF archivé
+  const archived = new Set(Object.values(pd.beoArchive).flatMap((w) => [w.book, ...(w.parts || [])].filter(Boolean).flatMap((x) => x.beos)));
+  const byWeek = (pred) => {
+    const m = new Map();
+    for (const e of evs) if (e.info?.beo && e.end_date >= today && e.date <= horizon && pred(e)) { const k = isoWeek(e.date); (m.get(k.key) || m.set(k.key, { wk: k, list: [] }).get(k.key)).list.push(e); }
+    return [...m.values()];
+  };
+  for (const g of byWeek((e) => !Array.isArray(e.info.av))) {
+    add('info', 'av_missing', `${g.wk.key}:${g.list.length}`, { date: g.list[0].date, title: 'Section AV des BEO non enregistrée',
+      detail: `${g.list.length} événement${g.list.length > 1 ? 's' : ''} de la ${g.wk.label} : réimporte le BEO Book de cette semaine pour voir leur section AV complète` });
+  }
+  for (const g of byWeek((e) => !archived.has(String(e.info.beo)))) {
+    const nums = [...new Set(g.list.map((e) => e.info.beo))];
+    add('info', 'not_archived', `${g.wk.key}:${nums}`, { date: g.list[0].date, title: 'PDF du BEO non archivé',
+      detail: `BEO ${nums.join(', ')} (${g.wk.label}) : le PDF n'est pas dans les archives, impossible de vérifier ces cases dans le BEO` });
+  }
+  const order = { err: 0, warn: 1, info: 2 };
+  out.sort((a, b) => order[a.level] - order[b.level] || (a.date || '').localeCompare(b.date || ''));
+  const dismissed = metaJson('checks_dismissed');
+  return { today, items: out.filter((x) => !dismissed[x.key]), dismissed: out.filter((x) => dismissed[x.key]).map((x) => ({ ...x, dismissed_ts: dismissed[x.key].ts })) };
+}
+
 const routes = {
   'GET /api/version': () => ({ build: BUILD }),
   'GET /api/data': () => ({
@@ -799,6 +1146,10 @@ const routes = {
     const list = Array.isArray(b.events) ? b.events : [];
     const removeIds = (Array.isArray(b.remove_ids) ? b.remove_ids : []).map(Number);
     if (!list.length && !removeIds.length && !b.token) throw new Error('Aucun événement sélectionné');
+    const nums = beoNums(b.beos);
+    const wk = isDate(b.from) ? isoWeek(b.from) : null;
+    const label = b.kind === 'book' ? `BEO Book — ${wk ? wk.label : 'semaine ?'}` : `BEO ${nums.join(', ') || '?'}${wk ? ` — ${wk.label}` : ''}`;
+    return journaled('beo', b.filename, label, (j) => {
     let added = 0, updated = 0, removed = 0; const skipped = [];
     inTransaction(() => {
       for (const e of list) {
@@ -822,23 +1173,44 @@ const routes = {
       for (const id of removeIds) removed += db.prepare('DELETE FROM planning_events WHERE id=?').run(id).changes;
       bumpPlanning();
     });
-    const week = b.token ? archiveBeo(b.token, b.filename, b.from, b.to, b.kind === 'book' ? 'book' : 'parts', b.beos) : null;
+    const week = b.token ? archiveBeo(b.token, b.filename, b.from, b.to, b.kind === 'book' ? 'book' : 'parts', b.beos, j) : null;
     return { added, updated, removed, skipped, archived: week, ...planningData() };
+    });
+  },
+  // Journal des imports
+  'GET /api/imports': () => importsList(),
+  'POST /api/imports/detail': (b) => {
+    const row = db.prepare('SELECT * FROM import_log WHERE id=?').get(Number(b.id));
+    if (!row) throw new Error('Import introuvable dans le journal');
+    return describeImport(row);
+  },
+  'POST /api/imports/undo': (b) => undoImport(b),
+  // Contrôle
+  'GET /api/checks': () => checksList(),
+  'POST /api/checks/dismiss': (b) => {
+    const k = String(b.key || ''); if (!k) throw new Error('Alerte inconnue');
+    const d = metaJson('checks_dismissed');
+    if (b.restore) delete d[k]; else d[k] = { ts: new Date().toISOString() };
+    metaSet('checks_dismissed', JSON.stringify(d));
+    return checksList();
   },
   'GET /api/beo/archive': () => beoArchive(),
   'POST /api/planning/phase': (b) => validatePhase(b),
   'POST /api/planning/phase/undo': (b) => undoPhase(b),
   'POST /api/offers/save': (b) => {
-    saveOffer(b);
-    return planningData();
+    const label = `Fiche technique — ${String(b.client || '').trim()}${b.version ? ' ' + b.version : ''}`;
+    return journaled('offre', b.filename, label, (j) => { saveOffer(b, j); return planningData(); });
   },
   'POST /api/offers/delete': (b) => {
-    if (!db.prepare('SELECT 1 FROM offers WHERE id=?').get(b.id)) throw new Error('Offre introuvable (déjà supprimée ?)');
-    const file = offerFile(b.id);
-    inTransaction(() => { undoOffer(b.id); db.prepare('DELETE FROM offers WHERE id=?').run(b.id); });
-    fs.rmSync(file, { force: true });
-    bumpPlanning();
-    return planningData();
+    const o = db.prepare('SELECT client, version, filename FROM offers WHERE id=?').get(b.id);
+    if (!o) throw new Error('Offre introuvable (déjà supprimée ?)');
+    // suppression notée au journal (PDF mis de côté) : elle peut être annulée comme un import
+    return journaled('offre-suppr', o.filename, `Suppression de la fiche technique — ${o.client}${o.version ? ' ' + o.version : ''}`, (j) => {
+      const file = offerFile(b.id);
+      inTransaction(() => { undoOffer(b.id); db.prepare('DELETE FROM offers WHERE id=?').run(b.id); bumpPlanning(); });
+      j.keep(file);
+      return planningData();
+    });
   },
   'POST /api/planning/event/delete': (b) => {
     db.prepare('DELETE FROM planning_events WHERE id=?').run(b.id);
@@ -1000,6 +1372,16 @@ const server = http.createServer((req, res) => {
   if (req.method === 'GET' && bpg) {
     try { const out = beoPagesFor(bpg[1]); res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(out)); }
     catch (e) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: e.message })); }
+  }
+  // PDF importé, gardé dans le journal : /api/imports/12/pdf
+  const ip = /^\/api\/imports\/(\d+)\/pdf$/.exec(url.pathname);
+  if (req.method === 'GET' && ip) {
+    const row = db.prepare('SELECT filename, changes FROM import_log WHERE id=?').get(ip[1]);
+    let file = null;
+    try { const src = jsonOr(row?.changes, {}).source; if (src) file = absFile(src); } catch {}
+    if (!file || !fs.existsSync(file)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('PDF introuvable dans le journal'); }
+    res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(row.filename || 'import.pdf')}` });
+    return fs.createReadStream(file).pipe(res);
   }
   // Affichage du PDF d'une offre dans le navigateur
   const op = /^\/api\/offers\/(\d+)\/pdf$/.exec(url.pathname);

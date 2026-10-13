@@ -198,6 +198,8 @@ app.whenReady().then(async () => {
   nativeTheme.themeSource = themeSource(config?.theme);
   // démarrage avec Windows : réinscrit à chaque lancement (le programme s'appelle désormais Dolce AV.exe)
   if (app.isPackaged && config?.mode === 'server' && config.autostart) app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
+  // ancienne inscription « Stock AV » (avant le changement de nom, le programme n'existe plus) : retirée
+  if (app.isPackaged) try { app.setLoginItemSettings({ openAtLogin: false, name: 'electron.app.Stock AV' }); } catch {}
   createWindow();
   if (!config?.mode) return openSetup();
   await win.loadURL(splashUrl()).catch(() => {}); // écran d'attente, remplacé dès que l'app est prête
