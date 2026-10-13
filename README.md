@@ -14,7 +14,7 @@ Suivi du stock audiovisuel et planning BEO de l'équipe AV (Dolce La Hulpe).
 
 > Windows peut afficher « Windows a protégé votre ordinateur » (application non signée) : *Informations complémentaires → Exécuter quand même*.
 
-> Le nom technique interne reste « Stock AV » (dossier d'installation, paramètres dans `%APPDATA%\Stock AV`) pour que les PC déjà installés gardent leur configuration.
+> Les paramètres restent dans `%APPDATA%\Stock AV` (nom des premières versions) pour que les PC déjà installés gardent leur configuration.
 
 ## Données
 

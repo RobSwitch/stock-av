@@ -1,7 +1,7 @@
 {
   "name": "stock-av",
-  "productName": "Stock AV",
-  "version": "1.5.4",
+  "productName": "Dolce AV",
+  "version": "1.5.5",
   "description": "Dolce AV — suivi du stock audiovisuel et planning BEO",
   "author": "Robin Schouten",
   "license": "UNLICENSED",
@@ -20,7 +20,7 @@
   },
   "build": {
     "appId": "be.dolce.stockav",
-    "productName": "Stock AV",
+    "productName": "Dolce AV",
     "files": [
       "electron/**",
       "public/**",

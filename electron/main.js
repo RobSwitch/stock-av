@@ -1,7 +1,8 @@
 'use strict';
 // Application installable « Dolce AV » (Electron)
-// Le nom technique reste « Stock AV » (package.json productName) : il fixe le dossier d'installation et
-// celui des paramètres (%APPDATA%\Stock AV) — le changer ferait perdre la configuration aux PC déjà installés.
+// Nom affiché partout : « Dolce AV » (installateur, menu Démarrer, Dolce AV.exe). L'identifiant (appId be.dolce.stockav)
+// ne change pas : la mise à jour remplace l'ancienne installation « Stock AV » au lieu d'en créer une deuxième.
+// Les paramètres restent dans %APPDATA%\Stock AV (dossier des premières versions) : config, thème, imprimante.
 // - Mode « serveur » : ce PC garde la base et fait tourner le serveur (les autres PC s'y connectent)
 // - Mode « client » : se connecte au serveur d'un autre PC (adresse saisie au premier lancement)
 // - Mise à jour automatique depuis les « Releases » GitHub, vérifiée à chaque lancement
@@ -10,6 +11,8 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { autoUpdater } = require('electron-updater');
+
+app.setPath('userData', path.join(app.getPath('appData'), 'Stock AV')); // avant tout le reste (verrou d'instance, config)
 
 const ICON = path.join(__dirname, 'icon.png');
 const CONFIG_FILE = path.join(app.getPath('userData'), 'config.json');
@@ -193,6 +196,8 @@ ipcMain.handle('setup:save', (_e, c) => {
 app.whenReady().then(async () => {
   config = readConfig();
   nativeTheme.themeSource = themeSource(config?.theme);
+  // démarrage avec Windows : réinscrit à chaque lancement (le programme s'appelle désormais Dolce AV.exe)
+  if (app.isPackaged && config?.mode === 'server' && config.autostart) app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
   createWindow();
   if (!config?.mode) return openSetup();
   await win.loadURL(splashUrl()).catch(() => {}); // écran d'attente, remplacé dès que l'app est prête
