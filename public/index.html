@@ -234,7 +234,12 @@
   .plweek .wk { min-width:30px; height:30px; padding:0 8px; display:inline-grid; place-items:center; white-space:nowrap; border:1px solid var(--line); background:var(--card); border-radius:9px; font-size:11.5px; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
   /* écran étroit : la barre de la semaine passe à la ligne au lieu de déborder */
   @media (max-width: 760px) { .plweek { margin-left:0; flex-wrap:wrap; white-space:normal; } .plbar .plareas { width:100%; } }
-  .plweek .wk:hover { background:var(--surface-2); }
+  .plweek .wk:hover, .plquick .wk:hover { background:var(--surface-2); }
+  /* Fiche du jour + Cette semaine : juste avant « Semaine du … au … » */
+  .plquick { margin-left:auto; display:inline-flex; gap:8px; }
+  .plquick + .plweek { margin-left:0; }
+  .plquick .wk { height:30px; padding:0 12px; white-space:nowrap; border:1px solid var(--line); background:var(--card); border-radius:9px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
+  @media (max-width: 760px) { .plquick { margin-left:0; } }
   .plsize button { padding:4px 10px; font-size:12px; }
 
   /* ---- Planning : grille (cases pleines, bord à bord ; rien en hauteur fixe dans les cases) ---- */
@@ -515,6 +520,9 @@
     <div class="plbar">
       <div class="seg plareas" id="plAreas"></div>
       <div class="daychips" id="plDays"></div>
+      <span class="plquick">
+        <button class="wk" id="plFiche" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux)">🖨 Fiche du jour</button>
+        <button class="wk" id="plToday" title="Revenir à la semaine d'aujourd'hui">Cette semaine</button></span>
       <span class="plweek"><button class="wk" id="plPrev2" title="Semaine précédente">◀</button><span id="plWeekInfo"></span><button class="wk" id="plNext2" title="Semaine suivante">▶</button>
         <span class="seg plsize" id="plDensity" title="Taille des cases de la grille"><button data-d="compact">Compacte</button><button data-d="detail">Détaillée</button></span>
         <button class="wk" id="plFull" title="Afficher la grille sur tout l'écran (Échap pour sortir)">⛶ Plein écran</button></span>
@@ -523,7 +531,6 @@
     <div class="card" id="plControls" style="margin-top:14px">
       <div class="row" style="align-items:center;margin-bottom:12px">
         <div class="seg"><button id="plPrev" title="Semaine précédente">◀</button><button id="plWeekLbl" disabled style="min-width:230px;font-weight:600"></button><button id="plNext" title="Semaine suivante">▶</button></div>
-        <button class="btn ghost" id="plToday">Cette semaine</button>
         <div class="seg" id="plView"><button data-v="grid">▦ Grille</button><button data-v="list">☰ Liste</button></div>
         <span style="flex:1"></span>
         <button class="btn" id="plNew">＋ Nouvel événement</button>
@@ -1392,7 +1399,6 @@ function planningSourceHtml() {
   return `<span class="plsrc-info muted" title="${esc(info)}">${bk ? `BEO Book : <b>${esc(bk.original)}</b> <span class="plsrc-when">· ${esc(when)}</span>` : esc(info)}</span>
     <span class="plsrc-btns">
       ${bk ? `<a class="btn ghost" href="${apercuUrl(`/api/beo/w/${bkKey}/pdf`, bk.original.replace(/\.pdf$/i, ''))}" target="_blank" rel="noopener" title="Voir et imprimer le BEO Book de la semaine">📄 Voir le BEO Book</a>` : ''}
-      <a class="btn ghost" href="/fiche.html?date=${isoToday()}" target="_blank" rel="noopener" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux)">🖨 Fiche du jour</a>
       <button class="btn" id="plPdf" title="Importer un BEO Book complet, ou un ou plusieurs BEO (PDF)">⬆ Importer un BEO</button>
       <button class="btn teal" id="plOffer" title="Fiches techniques (offres) : importer, ouvrir, supprimer">📎 Offres${PL.offers.length ? ` <span class="btn-count">${PL.offers.length}</span>` : ''}</button>
     </span>`;
@@ -1679,7 +1685,8 @@ document.addEventListener('fullscreenchange', () => { if (!document.fullscreenEl
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('plfull') && !document.querySelector('dialog[open]')) setFull(false); });
 $('#plPrev2').onclick = () => $('#plPrev').click();
 $('#plNext2').onclick = () => $('#plNext').click();
-$('#plToday').onclick = () => { PL.week = weekStart(isoToday()); PL.day = isoToday(); $('#plQ').value = ''; renderPlanning(); };
+$('#plFiche').onclick = () => window.open(`/fiche.html?date=${isoToday()}`, '_blank', 'noopener'); // date du jour au moment du clic
+$('#plToday').onclick =() => { PL.week = weekStart(isoToday()); PL.day = isoToday(); $('#plQ').value = ''; renderPlanning(); };
 
 // ----- Fenêtre d'édition d'un événement
 const EV = { id: null, confirmDel: false };
