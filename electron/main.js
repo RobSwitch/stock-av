@@ -5,7 +5,7 @@
 // - Mode « serveur » : ce PC garde la base et fait tourner le serveur (les autres PC s'y connectent)
 // - Mode « client » : se connecte au serveur d'un autre PC (adresse saisie au premier lancement)
 // - Mise à jour automatique depuis les « Releases » GitHub, vérifiée à chaque lancement
-const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, shell, clipboard } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, ipcMain, shell, clipboard, nativeTheme } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -161,6 +161,15 @@ ipcMain.handle('print:page', (e, o) => new Promise((resolve, reject) => {
   }, (ok, reason) => (ok ? resolve(true) : reject(new Error(reason || 'impression annulée'))));
 }));
 
+// ---- Apparence : la barre de titre de Windows suit le thème choisi dans l'app (Auto = celui de Windows)
+const themeSource = (t) => (t === 'dark' || t === 'light' ? t : 'system');
+ipcMain.on('theme:set', (_e, t) => {
+  nativeTheme.themeSource = themeSource(t);
+  if (config) config.theme = t; // config en mémoire : réécrite par d'autres réglages
+  const c = readConfig();
+  if (c && c.theme !== t) saveConfig({ ...c, theme: t }); // retenu pour le prochain lancement (pas de barre claire au démarrage)
+});
+
 // ---- Écran de premier lancement / paramètres (electron/setup.html)
 ipcMain.handle('setup:get', () => ({ config: readConfig(), suggestedDataDir: suggestedDataDir(), version: app.getVersion() }));
 ipcMain.handle('setup:chooseFolder', async (_e, current) => {
@@ -183,6 +192,7 @@ ipcMain.handle('setup:save', (_e, c) => {
 
 app.whenReady().then(async () => {
   config = readConfig();
+  nativeTheme.themeSource = themeSource(config?.theme);
   createWindow();
   if (!config?.mode) return openSetup();
   await win.loadURL(splashUrl()).catch(() => {}); // écran d'attente, remplacé dès que l'app est prête

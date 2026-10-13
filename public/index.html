@@ -741,6 +741,7 @@ fetch('/api/version').then((r) => r.json()).then((v) => { BUILD_LOADED = v.build
 function applyTheme(t) {
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
   document.querySelectorAll('#theme button').forEach((b) => b.classList.toggle('on', b.dataset.t === (t || 'auto')));
+  try { window.dolceav?.setTheme?.(t || 'auto'); } catch {} // application installée : barre de titre de Windows assortie
 }
 let _theme = 'auto'; try { _theme = localStorage.getItem('theme') || 'auto'; } catch {}
 applyTheme(_theme);

@@ -452,9 +452,41 @@ CREATE TABLE IF NOT EXISTS offers (
 `);
 // links : ce que l'offre a ajouté au planning [{ id: événement, tag, created }] → retiré si l'offre est supprimée ou remplacée
 if (!db.prepare('PRAGMA table_info(offers)').all().some((c) => c.name === 'links')) db.exec('ALTER TABLE offers ADD COLUMN links TEXT');
+// file : chemin du PDF dans fichiers/offres, rangé comme les BEO → « AAAA - Semaine NN (du … au …)\Fiche technique - Société V2.pdf »
+if (!db.prepare('PRAGMA table_info(offers)').all().some((c) => c.name === 'file')) db.exec('ALTER TABLE offers ADD COLUMN file TEXT');
 const OFFER_DIR = path.join(DATA_DIR, 'fichiers', 'offres');
 fs.mkdirSync(OFFER_DIR, { recursive: true });
-const offerFile = (id) => path.join(OFFER_DIR, `${Number(id)}.pdf`);
+const legacyOfferFile = (id) => path.join(OFFER_DIR, `${Number(id)}.pdf`); // anciennes versions : « 12.pdf »
+function offerFile(id) {
+  const o = db.prepare('SELECT file FROM offers WHERE id=?').get(Number(id));
+  const p = o?.file ? path.join(OFFER_DIR, o.file) : legacyOfferFile(id);
+  return p.startsWith(OFFER_DIR) ? p : legacyOfferFile(id);
+}
+// Dossier de la semaine du premier montage (ou du show) + nom lisible avec la société et la version
+// reuse : fichiers des versions remplacées → leur nom peut être repris
+function offerTarget(client, version, rooms, dated, reuse = []) {
+  const live = rooms.filter((r) => !r.skip);
+  const first = (k) => live.map((r) => r[k]).filter(isDate).sort()[0];
+  const day = first('setup') || first('show_from') || (isDate(dated) ? dated : new Date().toISOString().slice(0, 10)); // dossier : semaine du montage
+  const show = first('show_from') || day; // nom : jour du show → les fiches d'un même client (Day 1, Day 2…) se distinguent et se trient
+  const folder = isoWeek(day).folder;
+  const safe = (s) => String(s).replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120);
+  const base = safe(`${show.slice(8, 10)}-${show.slice(5, 7)} - Fiche technique - ${client}${version ? ' ' + version : ''}`);
+  fs.mkdirSync(path.join(OFFER_DIR, folder), { recursive: true });
+  let name = `${base}.pdf`;
+  const taken = (f) => fs.existsSync(f) && !reuse.some((r) => path.resolve(r).toLowerCase() === path.resolve(f).toLowerCase());
+  for (let n = 2; taken(path.join(OFFER_DIR, folder, name)); n++) name = `${base} (${n}).pdf`;
+  return path.join(folder, name);
+}
+// Rangement des fiches enregistrées avant ce classement (« 12.pdf » → dossier de la semaine)
+for (const o of db.prepare("SELECT id, client, version, dated, rooms FROM offers WHERE file IS NULL OR file=''").all()) {
+  try {
+    if (!fs.existsSync(legacyOfferFile(o.id))) continue;
+    const rel = offerTarget(o.client, o.version, JSON.parse(o.rooms || '[]'), o.dated);
+    fs.renameSync(legacyOfferFile(o.id), path.join(OFFER_DIR, rel));
+    db.prepare('UPDATE offers SET file=? WHERE id=?').run(rel, o.id);
+  } catch (e) { console.log(`[offres] rangement de la fiche ${o.id} impossible : ${e.message}`); }
+}
 const tmpFile = (token) => {
   if (!/^[0-9a-f-]{36}$/.test(token || '')) throw new Error('Envoi expiré : choisis à nouveau le fichier');
   return path.join(OFFER_DIR, `tmp-${token}.pdf`);
@@ -580,16 +612,20 @@ function saveOffer(b) {
     if (!r.room_ids.length && !r.skip) throw new Error(`Choisis la salle de l'application pour « ${r.name || 'cette offre'} »`);
   }
   let id;
+  const oldFiles = (b.replace_ids || []).map(Number).map(offerFile); // anciennes versions : remplacées par celle-ci
+  const rel = offerTarget(client, b.version || '', rooms, b.dated, oldFiles);
+  const dest = path.join(OFFER_DIR, rel);
   inTransaction(() => {
     for (const old of (b.replace_ids || []).map(Number)) { undoOffer(old); db.prepare('DELETE FROM offers WHERE id=?').run(old); }
     const links = applyOffer(client, rooms);
     learnEquipment(rooms);
-    id = Number(db.prepare('INSERT INTO offers (filename, client, version, title, dated, rooms, services, links) VALUES (?,?,?,?,?,?,?,?)')
-      .run(b.filename || '', client, b.version || '', b.title || '', b.dated || '', JSON.stringify(rooms), JSON.stringify(b.services || []), JSON.stringify(links)).lastInsertRowid);
+    id = Number(db.prepare('INSERT INTO offers (filename, client, version, title, dated, rooms, services, links, file) VALUES (?,?,?,?,?,?,?,?,?)')
+      .run(b.filename || '', client, b.version || '', b.title || '', b.dated || '', JSON.stringify(rooms), JSON.stringify(b.services || []), JSON.stringify(links), rel).lastInsertRowid);
     bumpPlanning();
   });
-  fs.renameSync(src, offerFile(id));
-  for (const old of (b.replace_ids || []).map(Number)) fs.rmSync(offerFile(old), { force: true });
+  const same = (f) => path.resolve(f).toLowerCase() === path.resolve(dest).toLowerCase();
+  for (const f of oldFiles) if (!same(f)) fs.rmSync(f, { force: true });
+  fs.renameSync(src, dest); // remplace l'ancienne version si elle portait le même nom
   return id;
 }
 
@@ -798,8 +834,9 @@ const routes = {
   },
   'POST /api/offers/delete': (b) => {
     if (!db.prepare('SELECT 1 FROM offers WHERE id=?').get(b.id)) throw new Error('Offre introuvable (déjà supprimée ?)');
+    const file = offerFile(b.id);
     inTransaction(() => { undoOffer(b.id); db.prepare('DELETE FROM offers WHERE id=?').run(b.id); });
-    fs.rmSync(offerFile(b.id), { force: true });
+    fs.rmSync(file, { force: true });
     bumpPlanning();
     return planningData();
   },

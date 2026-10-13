@@ -9,6 +9,8 @@ if (location.protocol === 'http:' || location.protocol === 'https:') {
     // aperçu avant impression : liste des imprimantes, puis impression directe de la page affichée
     printers: () => ipcRenderer.invoke('print:printers'),
     print: (opts) => ipcRenderer.invoke('print:page', opts || {}),
+    // apparence choisie dans l'app (Auto / Clair / Sombre) → barre de titre des fenêtres
+    setTheme: (t) => ipcRenderer.send('theme:set', String(t || 'auto')),
   });
 }
 
