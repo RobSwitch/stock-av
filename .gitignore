@@ -15,3 +15,7 @@ dist/
 
 # aperçus de style (fichiers de travail)
 apercu*.html
+
+# démo locale (base et documents fictifs)
+demo/
+exemples-fiches/

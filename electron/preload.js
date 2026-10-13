@@ -6,6 +6,9 @@ const { contextBridge, ipcRenderer } = require('electron');
 if (location.protocol === 'http:' || location.protocol === 'https:') {
   contextBridge.exposeInMainWorld('dolceav', {
     savePdf: (name) => ipcRenderer.invoke('page:savePdf', String(name || 'Dolce AV.pdf')),
+    // aperçu avant impression : liste des imprimantes, puis impression directe de la page affichée
+    printers: () => ipcRenderer.invoke('print:printers'),
+    print: (opts) => ipcRenderer.invoke('print:page', opts || {}),
   });
 }
 

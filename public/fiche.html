@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dolce AV — Fiche du jour</title>
+<script src="/print-panel.js"></script>
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
   /* Fiche du jour : A4 paysage, pliable en deux (gauche : Oasis + Rez-de-chaussée ; droite : Étage +1 + Autres) — notes en bas de chaque moitié */
@@ -70,6 +71,22 @@
     .tools, .fit-warn { display:none !important; }
     .sheet { margin:0; box-shadow:none; }
   }
+  /* réglages d'impression (print-panel.js) : panneau à droite, la fiche affichée sert d'aperçu */
+  #printDlg { position:fixed; top:64px; right:16px; width:280px; background:#fff; border:1px solid #ece7e2; border-radius:14px; box-shadow:0 20px 50px rgba(0,0,0,.25); padding:16px; z-index:20; display:none; }
+  #printDlg.open { display:block; }
+  .pp-title { font-weight:800; font-size:17px; margin-bottom:10px; }
+  .pp-f { display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:12px; }
+  .pp-f select, .pp-f input, #ppRange { font:inherit; font-size:14px; font-weight:400; color:var(--ink); border:1px solid #ece7e2; border-radius:9px; padding:7px 10px; background:#fff; }
+  .pp-r { display:flex; align-items:center; gap:7px; font-size:13.5px; font-weight:500; color:var(--ink); margin:2px 0 6px; }
+  .pp-seg { display:flex; background:#f6f4f1; border:1px solid #ece7e2; border-radius:10px; padding:2px; }
+  .pp-seg button { flex:1; border:0; background:none; font:inherit; font-size:13px; padding:6px; border-radius:8px; cursor:pointer; color:var(--muted); }
+  .pp-seg button.on { background:#fff; color:var(--ink); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.1); }
+  .pp-btn { display:block; width:100%; text-align:center; text-decoration:none; font:inherit; font-weight:600; padding:9px 12px; border-radius:10px; border:1px solid #ece7e2; background:#fff; color:var(--ink); cursor:pointer; margin-top:8px; }
+  .pp-btn.main { background:var(--accent); border-color:var(--accent); color:#fff; margin-top:14px; font-size:15px; }
+  .pp-btn.ghost { border-color:transparent; color:var(--muted); }
+  .pp-msg { font-size:13px; color:var(--muted); min-height:1.2em; margin:6px 0 0; }
+  body.gray .sheet { filter:grayscale(1); }
+  @media print { #printDlg { display:none !important; } }
   .fit-warn { max-width:297mm; margin:0 auto; color:#8a5a00; background:#fff4d6; padding:6px 12px; border-radius:8px; font-size:13px; display:none; }
 </style>
 </head>
@@ -80,9 +97,10 @@
   <span class="muted" id="sub"></span>
   <span class="sp"></span>
   <button id="prev" title="Jour précédent">◀</button><button id="today">Aujourd'hui</button><button id="next" title="Jour suivant">▶</button>
-  <button class="main" id="pdf">Enregistrer en PDF</button>
-  <button id="print">Imprimer</button>
+  <button id="pdf">Enregistrer en PDF</button>
+  <button class="main" id="print">🖨 Imprimer…</button>
 </div>
+<div id="printDlg"></div>
 <p class="fit-warn" id="fitWarn"></p>
 <div class="sheet" id="sheet"></div>
 
@@ -221,7 +239,24 @@ $('#day').addEventListener('change', render);
 $('#prev').onclick = () => { $('#day').value = addDays($('#day').value, -1); render(); };
 $('#next').onclick = () => { $('#day').value = addDays($('#day').value, 1); render(); };
 $('#today').onclick = () => { $('#day').value = isoOf(new Date()); render(); };
-$('#print').onclick = () => window.print();
+// « Imprimer… » : réglages (imprimante, copies, couleur, recto-verso) ; la fiche affichée est l'aperçu
+let printReady = false;
+$('#print').onclick = async () => {
+  const dlg = $('#printDlg');
+  if (dlg.classList.contains('open')) { dlg.classList.remove('open'); return; }
+  dlg.classList.add('open');
+  if (printReady) return;
+  printReady = true;
+  await PrintPanel.mount(dlg, {
+    pageCount: 1,
+    onChange: (o) => document.body.classList.toggle('gray', !o.color),
+    onClose: () => dlg.classList.remove('open'),
+    onPrint: async (o) => {
+      if (PrintPanel.isApp()) await PrintPanel.printApp(o, { landscape: true });
+      else window.print();
+    },
+  });
+};
 // application installée : PDF enregistré directement ; navigateur : impression (« Enregistrer au format PDF »)
 $('#pdf').onclick = async () => {
   if (window.dolceav?.savePdf) {

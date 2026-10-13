@@ -925,7 +925,7 @@ const routes = {
   },
 };
 
-const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml' };
+const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
 
 // Version = celle de package.json (les pages ouvertes se rechargent toutes seules quand elle change)
 const BUILD = 'v' + require('./package.json').version;

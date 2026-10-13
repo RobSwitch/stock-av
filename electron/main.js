@@ -151,6 +151,16 @@ ipcMain.handle('page:savePdf', async (e, name) => {
   return file;
 });
 
+// ---- Aperçu avant impression : imprimantes du PC + impression directe (sans la boîte de dialogue de Windows)
+ipcMain.handle('print:printers', async (e) => (await e.sender.getPrintersAsync())
+  .map((p) => ({ name: p.name, displayName: p.displayName || p.name, isDefault: !!p.isDefault })));
+ipcMain.handle('print:page', (e, o) => new Promise((resolve, reject) => {
+  e.sender.print({
+    silent: true, printBackground: true, deviceName: String(o.deviceName || ''), copies: Math.max(1, Math.min(99, Number(o.copies) || 1)),
+    color: o.color !== false, landscape: !!o.landscape, duplexMode: o.duplex ? 'longEdge' : 'simplex', margins: { marginType: 'none' },
+  }, (ok, reason) => (ok ? resolve(true) : reject(new Error(reason || 'impression annulée'))));
+}));
+
 // ---- Écran de premier lancement / paramètres (electron/setup.html)
 ipcMain.handle('setup:get', () => ({ config: readConfig(), suggestedDataDir: suggestedDataDir(), version: app.getVersion() }));
 ipcMain.handle('setup:chooseFolder', async (_e, current) => {

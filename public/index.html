@@ -1374,7 +1374,7 @@ function planningSourceHtml() {
   // textes courts, jamais coupés (détail au survol) ; sur petit écran, les boutons passent sur toute la largeur
   return `<span class="plsrc-info muted" title="${esc(info)}">${bk ? `BEO Book : <b>${esc(bk.original)}</b> <span class="plsrc-when">· ${esc(when)}</span>` : esc(info)}</span>
     <span class="plsrc-btns">
-      ${bk ? `<a class="btn ghost" href="/api/beo/w/${bkKey}/pdf" target="_blank" rel="noopener" title="Ouvrir le BEO Book de la semaine (PDF)">📄 Voir le BEO Book</a>` : ''}
+      ${bk ? `<a class="btn ghost" href="${apercuUrl(`/api/beo/w/${bkKey}/pdf`, bk.original.replace(/\.pdf$/i, ''))}" target="_blank" rel="noopener" title="Voir et imprimer le BEO Book de la semaine">📄 Voir le BEO Book</a>` : ''}
       <a class="btn ghost" href="/fiche.html?date=${isoToday()}" target="_blank" rel="noopener" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux)">🖨 Fiche du jour</a>
       <button class="btn" id="plPdf" title="Importer un BEO Book complet, ou un ou plusieurs BEO (PDF)">⬆ Importer un BEO</button>
       <button class="btn teal" id="plOffer" title="Fiches techniques (offres) : importer, ouvrir, supprimer">📎 Offres${PL.offers.length ? ` <span class="btn-count">${PL.offers.length}</span>` : ''}</button>
@@ -1447,7 +1447,11 @@ function offerTip(o, r) {
   ].filter(Boolean).join('\n');
 }
 const offerChip = (o, r) =>
-  `<a class="ofr" href="/api/offers/${o.id}/pdf#page=${r.page || 1}" target="_blank" rel="noopener" title="${esc(offerTip(o, r))}">📄 Offre</a>`;
+  `<a class="ofr" href="${apercuUrl(`/api/offers/${o.id}/pdf`, `Fiche technique - ${o.client}${o.version ? ' ' + o.version : ''}`, r.page || 1)}" target="_blank" rel="noopener" title="${esc(offerTip(o, r))}">📄 Offre</a>`;
+// tous les PDF de l'application s'ouvrent dans l'aperçu avant impression (apercu.html)
+function apercuUrl(src, title, page = 1) {
+  return `/apercu.html?src=${encodeURIComponent(src)}&title=${encodeURIComponent(title || 'Document')}&page=${page}`;
+}
 // Même société ? (même règle que le serveur) « EU Aluminium » ≈ « (CVENT) European Aluminium »
 const CLIENT_STOP = new Set(['the', 'and', 'des', 'les', 'group', 'groupe', 'meeting', 'meetings', 'event', 'events', 'international', 'europe', 'european', 'belgium', 'belgique', 'company', 'sprl', 'srl', 'asbl']);
 const clientWords = (s) => norm(String(s || '').replace(/\([^)]*\)/g, ' ')).split(/[^a-z0-9]+/).filter((w) => w.length >= 3 && !CLIENT_STOP.has(w));
@@ -1657,7 +1661,7 @@ function openEvent(ev, pre) {
   // BEO de l'événement (dernière version archivée : BEO isolé ou BEO Book)
   const beo = ev?.info?.beo;
   const archived = beo && Object.values(PL.beoArchive || {}).some((w) => [w.book, ...(w.parts || [])].some((x) => x && x.beos.includes(String(beo))));
-  $('#evBeo').innerHTML = beo ? `<span class="muted" style="font-size:13px">BEO n° ${esc(beo)}</span> ${archived ? `<a class="btn small" style="padding:3px 10px;font-size:12.5px" href="/api/beo/n/${encodeURIComponent(beo)}/pdf" target="_blank" rel="noopener">📄 Ouvrir le BEO</a>` : '<span class="muted" style="font-size:12px">(PDF non archivé)</span>'}` : '';
+  $('#evBeo').innerHTML = beo ? `<span class="muted" style="font-size:13px">BEO n° ${esc(beo)}</span> ${archived ? `<a class="btn small" style="padding:3px 10px;font-size:12.5px" href="${apercuUrl(`/api/beo/n/${encodeURIComponent(beo)}/pdf`, `BEO ${beo} - ${ev.client}`)}" target="_blank" rel="noopener">📄 Ouvrir le BEO</a>` : '<span class="muted" style="font-size:12px">(PDF non archivé)</span>'}` : '';
   // phases déjà validées (« Prêt ») : possibilité d'annuler et de remettre le matériel à sa place
   const dn = ev?.done || [];
   $('#evDone').style.display = dn.length ? '' : 'none';
@@ -2135,7 +2139,7 @@ function renderOfList() {
     (list.length ? `<div class="lbl">Offres enregistrées (${list.length})</div><div class="oflist">` + list.map((o) => `<div class="o">
       <span style="flex:1;min-width:240px"><b>${esc(o.client)}</b> <span class="muted">${esc([o.title, o.version].filter(Boolean).join(' '))}</span><br>
       <span class="muted" style="font-size:13px">${o.rooms.map((r) => `${esc(r.room_ids.length ? r.room_ids.map(locName).join('+') : (r.name || '?') + ' (hors grille)')} : montage ${r.setup ? dayLabel(r.setup) : '?'}`).join(' · ')}</span></span>
-      <a class="btn ghost" style="text-decoration:none;padding:4px 10px" href="/api/offers/${o.id}/pdf" target="_blank" rel="noopener">Ouvrir le PDF</a>
+      <a class="btn ghost" style="text-decoration:none;padding:4px 10px" href="${apercuUrl(`/api/offers/${o.id}/pdf`, `Fiche technique - ${o.client}${o.version ? ' ' + o.version : ''}`)}" target="_blank" rel="noopener">Ouvrir le PDF</a>
       <button type="button" class="btn ghost" data-ofdel="${o.id}" style="padding:4px 10px;color:var(--err)">${OF.confirmDel === o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`).join('') + '</div>'
       : '<p class="muted">Aucune offre enregistrée pour le moment.</p>');
 }
