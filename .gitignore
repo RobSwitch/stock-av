@@ -14,7 +14,7 @@ node_modules/
 dist/
 
 # aperçus de style (fichiers de travail)
-apercu*.html
+/apercu*.html
 
 # démo locale (base et documents fictifs)
 demo/

@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aperçu avant impression — Dolce AV</title>
+<link rel="icon" type="image/png" href="/icon.png">
+<style>
+  /* Aperçu avant impression d'un PDF de l'application (fiches techniques, BEO Book, BEO) */
+  :root { --bg:#e9e6e2; --card:#fff; --ink:#1d1f27; --muted:#6c6f7d; --line:#ece7e2; --accent:#a6192e; --accent-soft:#fbe8eb; color-scheme:light; }
+  * { box-sizing:border-box; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--ink); font:14px/1.45 "Segoe UI Variable Text","Segoe UI",system-ui,sans-serif; }
+  .app { display:grid; grid-template-columns:1fr 290px; height:100vh; }
+  .top { grid-column:1 / -1; display:flex; align-items:center; gap:10px; padding:8px 16px; background:#fff; border-bottom:1px solid var(--line); }
+  .top img { width:32px; }
+  .top b { font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .top .muted { color:var(--muted); font-size:13px; white-space:nowrap; }
+  .top .sp { flex:1; }
+  .zoom { display:flex; gap:2px; background:#f6f4f1; border:1px solid var(--line); border-radius:10px; padding:2px; }
+  .zoom button { border:0; background:none; font:inherit; padding:4px 10px; border-radius:8px; cursor:pointer; }
+  .zoom button.on { background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.1); font-weight:600; }
+  .app { grid-template-rows:auto 1fr; }
+  .pages { overflow:auto; padding:22px; display:flex; flex-direction:column; align-items:center; gap:18px; }
+  .pg { position:relative; background:#fff; box-shadow:0 4px 18px rgba(0,0,0,.18); transition:opacity .15s; }
+  .pg canvas { display:block; width:100%; height:auto; }
+  .pg .num { position:absolute; right:-2px; bottom:-20px; font-size:12px; color:var(--muted); }
+  .pg.off { opacity:.28; }
+  .pg.off::after { content:"non imprimée"; position:absolute; inset:0; display:grid; place-items:center; font-weight:700; color:#555; font-size:18px; }
+  .gray .pg canvas { filter:grayscale(1); }
+  .loading { color:var(--muted); padding:40px; }
+  .side { background:#fff; border-left:1px solid var(--line); padding:16px; overflow:auto; }
+  /* panneau de réglages (print-panel.js) */
+  .pp-title { font-weight:800; font-size:17px; margin-bottom:10px; }
+  .pp-f { display:flex; flex-direction:column; gap:5px; font-size:12.5px; font-weight:600; color:var(--muted); margin-bottom:12px; }
+  .pp-f select, .pp-f input, .pp-r input[type=text], #ppRange { font:inherit; font-size:14px; font-weight:400; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:7px 10px; background:#fff; }
+  .pp-r { display:flex; align-items:center; gap:7px; font-size:13.5px; font-weight:500; color:var(--ink); margin:2px 0 6px; }
+  .pp-r input[type=radio], .pp-r input[type=checkbox] { accent-color:var(--accent); }
+  .pp-seg { display:flex; background:#f6f4f1; border:1px solid var(--line); border-radius:10px; padding:2px; }
+  .pp-seg button { flex:1; border:0; background:none; font:inherit; font-size:13px; padding:6px; border-radius:8px; cursor:pointer; color:var(--muted); }
+  .pp-seg button.on { background:#fff; color:var(--ink); font-weight:600; box-shadow:0 1px 2px rgba(0,0,0,.1); }
+  .pp-btn { display:block; width:100%; text-align:center; text-decoration:none; font:inherit; font-weight:600; padding:9px 12px; border-radius:10px; border:1px solid var(--line); background:#fff; color:var(--ink); cursor:pointer; margin-top:8px; }
+  .pp-btn.main { background:var(--accent); border-color:var(--accent); color:#fff; margin-top:14px; font-size:15px; }
+  .pp-btn.main:disabled { opacity:.5; cursor:wait; }
+  .pp-btn.ghost { border-color:transparent; color:var(--muted); }
+  .pp-msg { font-size:13px; color:var(--muted); min-height:1.2em; }
+  #printArea { display:none; }
+  @media (max-width: 760px) { .app { grid-template-columns:1fr; height:auto; } .side { border-left:0; border-top:1px solid var(--line); } }
+  /* impression : seulement les pages choisies, chacune sur sa feuille (orientation de la page) */
+  @page portrait { size:A4 portrait; margin:0; }
+  @page landscape { size:A4 landscape; margin:0; }
+  @media print {
+    html, body { background:#fff; height:auto; }
+    .app { display:none !important; }
+    #printArea { display:block; }
+    #printArea .sheet { break-after:page; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+    #printArea .sheet:last-child { break-after:auto; }
+    #printArea .sheet.portrait { page:portrait; width:210mm; height:297mm; }
+    #printArea .sheet.landscape { page:landscape; width:297mm; height:210mm; }
+    #printArea img { max-width:100%; max-height:100%; }
+    #printArea.gray img { filter:grayscale(1); }
+  }
+</style>
+<script src="/print-panel.js"></script>
+</head>
+<body>
+<div class="app">
+  <div class="top"><img src="/mascotte/normal.svg" alt=""><b id="docTitle">Aperçu avant impression</b><span class="muted" id="docInfo"></span><span class="sp"></span>
+    <div class="zoom" id="zoom"><button data-z="0.75">75 %</button><button data-z="1" class="on">100 %</button><button data-z="1.35">135 %</button></div></div>
+  <div class="pages" id="pages"><div class="loading">Chargement du document…</div></div>
+  <aside class="side" id="side"></aside>
+</div>
+<div id="printArea"></div>
+<script type="module">
+import * as pdfjsLib from '/vendor/pdfjs/pdf.min.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+
+const q = new URLSearchParams(location.search);
+const src = q.get('src') || '';
+const title = q.get('title') || 'Document';
+const startPage = Number(q.get('page')) || 1;
+document.getElementById('docTitle').textContent = title;
+document.title = `Aperçu — ${title}`;
+const $ = (s) => document.querySelector(s);
+const BASE_W = 760; // largeur d'une page portrait à 100 %
+const beoNum = q.get('beo'); // BEO d'un événement : seulement ses pages dans le BEO Book
+let pdf = null, zoom = 1, sizes = [];
+let list = []; // pages du PDF affichées (n° réels) ; l'aperçu et l'impression les numérotent 1, 2, 3…
+const real = (i) => list[i - 1];
+
+async function renderPreview() {
+  const box = $('#pages'); box.innerHTML = '';
+  const dpr = window.devicePixelRatio || 1;
+  for (let i = 1; i <= list.length; i++) {
+    const page = await pdf.getPage(real(i));
+    const vp1 = page.getViewport({ scale: 1 });
+    const land = vp1.width > vp1.height;
+    sizes[i] = { land, w: vp1.width, h: vp1.height };
+    const cssW = (land ? BASE_W * 1.414 : BASE_W) * zoom;
+    const scale = cssW / vp1.width;
+    const vp = page.getViewport({ scale: scale * dpr });
+    const wrap = document.createElement('div'); wrap.className = 'pg'; wrap.dataset.n = i; wrap.style.width = cssW + 'px';
+    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+    wrap.append(c); const num = document.createElement('span'); num.className = 'num'; num.textContent = `Page ${i} / ${list.length}`; wrap.append(num);
+    box.append(wrap);
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+  }
+  if (panel) mark(panel.read());
+}
+function mark(o) {
+  const set = new Set(o.pages);
+  document.querySelectorAll('.pg').forEach((p) => p.classList.toggle('off', !set.has(Number(p.dataset.n))));
+  $('#pages').classList.toggle('gray', !o.color);
+}
+// pages choisies rendues en haute définition (≈ 200 dpi) dans la zone d'impression
+async function buildPrint(o) {
+  const area = $('#printArea'); area.innerHTML = ''; area.classList.toggle('gray', !o.color);
+  for (const i of o.pages) {
+    const page = await pdf.getPage(real(i));
+    const vp = page.getViewport({ scale: 200 / 72 });
+    const c = document.createElement('canvas'); c.width = vp.width; c.height = vp.height;
+    await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+    const sheet = document.createElement('div'); sheet.className = 'sheet ' + (sizes[i]?.land ? 'landscape' : 'portrait');
+    const img = new Image(); img.src = c.toDataURL('image/jpeg', 0.92); sheet.append(img); area.append(sheet);
+    await img.decode().catch(() => {});
+  }
+}
+
+let panel = null;
+window.__apercu = { buildPrint, clear: () => { $('#printArea').innerHTML = ''; } }; // vérifications automatiques du rendu imprimé
+try {
+  if (!/^\/api\//.test(src)) throw new Error('Document inconnu');
+  let part = null;
+  if (beoNum) {
+    const r = await fetch(`/api/beo/n/${encodeURIComponent(beoNum)}/pages`).then((x) => x.json());
+    if (r.error) throw new Error(r.error);
+    if (r.pages.length) part = r;
+  }
+  pdf = await pdfjsLib.getDocument(src).promise;
+  list = part ? part.pages.filter((n) => n <= pdf.numPages) : Array.from({ length: pdf.numPages }, (_, i) => i + 1);
+  const pl = (n) => `${n} page${n > 1 ? 's' : ''}`;
+  const where = list.length > 1 ? `pages ${list[0]}–${list[list.length - 1]}` : `page ${list[0]}`;
+  $('#docInfo').textContent = part && part.book ? `${pl(list.length)} · ${where} du BEO Book (${pdf.numPages} pages)` : pl(list.length);
+  panel = await PrintPanel.mount($('#side'), {
+    pageCount: list.length, downloadUrl: src, downloadName: (part && part.book ? part.original.replace(/\.pdf$/i, '') : title).replace(/[<>:"/\\|?*]/g, '_') + '.pdf',
+    downloadLabel: part && part.book ? '⬇ Télécharger le BEO Book complet' : '',
+    onChange: mark,
+    onPrint: async (o) => {
+      await buildPrint(o);
+      const allLand = o.pages.every((i) => sizes[i]?.land); // sizes : numérotation de l'aperçu (1, 2, 3…)
+      try {
+        if (PrintPanel.isApp()) await PrintPanel.printApp(o, { landscape: allLand });
+        else { window.print(); }
+      } finally { $('#printArea').innerHTML = ''; }
+    },
+  });
+  await renderPreview();
+  document.querySelector(`.pg[data-n="${startPage}"]`)?.scrollIntoView({ block: 'start' });
+} catch (e) {
+  $('#pages').innerHTML = `<div class="loading">Impossible d'afficher ce document : ${String(e.message || e).replace(/</g, '&lt;')}</div>`;
+}
+$('#zoom').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-z]'); if (!b || !pdf) return;
+  zoom = Number(b.dataset.z); document.querySelectorAll('#zoom button').forEach((x) => x.classList.toggle('on', x === b));
+  await renderPreview();
+});
+</script>
+</body>
+</html>
