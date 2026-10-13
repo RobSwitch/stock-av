@@ -78,8 +78,19 @@ function parseAv(pm, st) {
       if (c.size >= 11 && c.bold) { st.inAV = /Mise en place salles de r/i.test(c.text); st.cur = null; continue; }
       if (!st.inAV) continue;
       const m = BLOCK_HDR.exec(c.text);
-      if (m && c.bold) { st.cur = { start: pad(m[1]), end: pad(m[2]), phase: m[3], room: clean(m[4]), av: [], other: [], mode: null }; st.blocks.push(st.cur); continue; }
+      if (m && c.bold) { st.cur = { start: pad(m[1]), end: pad(m[2]), phase: m[3], room: clean(m[4]), av: [], other: [], mode: null, groups: [] }; st.blocks.push(st.cur); continue; }
       if (!st.cur) continue;
+      // texte complet, tel qu'il est dans le BEO : rubriques (« Salle Plénière AV », « Set Up »…) et leurs lignes
+      const t = clean(c.text);
+      if (t) {
+        const g = st.cur.groups;
+        if (c.x >= 300 && c.x < 310 && t.length <= 40) g.push({ label: t, av: /\bAV$/i.test(t), lines: [] });
+        else {
+          if (!g.length) g.push({ label: '', av: false, lines: [] });
+          const cur = g[g.length - 1];
+          if (cur.lines[cur.lines.length - 1] !== t && cur.label !== t) cur.lines.push(t); // le BEO répète parfois la ligne
+        }
+      }
       if (c.x < 310) { st.cur.mode = /\bAV$/i.test(c.text) ? 'av' : 'other'; if (st.cur.mode === 'other') st.cur.other.push(c.text); }
       else if (st.cur.mode === 'av') st.cur.av.push(c.text);
       else st.cur.other.push(c.text);
@@ -155,8 +166,9 @@ function parseBeoBook(buf, match) {
     const avByRoom = new Map();
     for (const blk of b.av.blocks) {
       for (const id of noteRoom(blk.room, 0)) {
-        const a = avByRoom.get(id) || { av: [], other: [], block: true };
+        const a = avByRoom.get(id) || { av: [], other: [], blocks: [] };
         a.av.push(...blk.av); a.other.push(...blk.other);
+        a.blocks.push({ start: blk.start, end: blk.end, phase: blk.phase, room: blk.room, groups: blk.groups });
         avByRoom.set(id, a);
         const g = [...groups.values()].find((x) => x.id === id);
         if (!g) { // salle présente dans l'agenda mais pas dans le tableau
@@ -175,7 +187,8 @@ function parseBeoBook(buf, match) {
         beo: b.number, date: g.date, room_id: g.id, start: g.start, end: g.end,
         client, account: h.account, event_name: h.eventName, status: h.status, color,
         detail, av: items, hasAv: !!a, rows: g.rows,
-        info: { beo: b.number, account: h.account, event: h.eventName, rows: g.info }, // n° de BEO : retrouve l'événement dans une version mise à jour
+        // n° de BEO : retrouve l'événement dans une version mise à jour ; av : section « Mise en place salles & AV » complète
+        info: { beo: b.number, account: h.account, event: h.eventName, rows: g.info, av: a ? a.blocks : [] },
       });
     }
   }
@@ -232,4 +245,11 @@ function makeMatcher(locs, saved = {}) {
   };
 }
 
-module.exports = { parseBeoBook, describeAv, makeMatcher, nz };
+// Pages du PDF (numérotées à partir de 1) de chaque BEO : { '54218': [1, 2, 3], … }
+function beoPages(buf) {
+  const out = {};
+  extractPages(buf).map(pageModel).forEach((pm, i) => { if (pm.beo) (out[pm.beo] ||= []).push(i + 1); });
+  return out;
+}
+
+module.exports = { parseBeoBook, describeAv, makeMatcher, nz, beoPages };

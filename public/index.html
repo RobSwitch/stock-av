@@ -280,6 +280,21 @@
   .pc:not(:only-child).yellow { background:var(--amber-soft); box-shadow:inset 4px 0 0 var(--amber); }
   .pc:not(:only-child).split { background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
   .pc + .pc { border-top:1px solid var(--line); }
+  .avx { float:right; margin:0 0 0 4px; font-size:11px; font-weight:800; color:var(--accent); cursor:help; }
+  /* clic sur une case avec un BEO : Modifier / Voir le BEO */
+  .evmenu { position:fixed; z-index:50; background:var(--card); color:var(--ink); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow-lg); padding:10px; min-width:220px; max-width:300px; }
+  .evmenu .h { font-weight:700; padding:2px 6px 8px; overflow-wrap:anywhere; }
+  .evmenu .h small { display:block; font-weight:400; color:var(--muted); font-size:12px; }
+  .evmenu .btn { display:flex; width:100%; justify-content:flex-start; text-decoration:none; margin-top:4px; box-sizing:border-box; }
+  /* section « Mise en place salles & AV » du BEO, dans la fenêtre de l'événement */
+  .beoav { border:1px solid var(--line); border-radius:12px; padding:8px 12px; max-height:200px; overflow:auto; font-size:13px; }
+  .beoav summary { cursor:pointer; font-weight:700; }
+  .beoav .blk { margin-top:6px; color:var(--muted); font-size:12px; }
+  .beoav .grp { margin-top:4px; }
+  .beoav .grp b { font-size:12.5px; }
+  .beoav .grp.av b { color:var(--accent); }
+  .beoav .grp div { padding-left:12px; }
+  .beoav .xtra { background:var(--amber-soft); border-radius:4px; padding:0 4px; }
   a.btn.small { padding:4px 10px; font-size:12.5px; border-radius:8px; }
   table.pg td.fill { background:var(--card); box-shadow:inset 4px 0 0 var(--line); }
   table.pg td.fill-red { background:var(--red-soft); box-shadow:inset 4px 0 0 var(--red); }
@@ -633,6 +648,7 @@
 <dialog id="evDlg">
   <h2 id="evTitle">Événement</h2>
   <div id="evBeo" style="margin:-6px 0 12px"></div>
+  <div id="evAv" style="margin:0 0 12px;width:min(560px,90vw)"></div>
   <div style="display:flex;flex-direction:column;gap:12px;width:min(560px,90vw)">
     <label>Société / client<input id="evClient" autocomplete="off"></label>
     <div class="row">
@@ -1392,7 +1408,7 @@ function evCard(e) {
     + (e.end_date !== e.date ? `<span class="tg">jusqu'au ${dayLabel(e.end_date)}</span>` : '');
   const rooms = e.room_ids.length ? e.room_ids.map((id) => locName(id)) : e.rooms;
   return `<div class="ev ${e.color || ''} ${isSplit(e) ? 'split' : ''}" data-edit="${e.id}" title="${esc(beoInfoLines(e).join('\n'))}">${time}
-    <div class="evmain"><div><b class="evclient">${esc(e.client)}</b>${rooms.map((r) => `<span class="rm">${esc(r)}</span>`).join('')}${tags}</div>
+    <div class="evmain"><div><b class="evclient">${esc(e.client)}</b>${avExtra(e).length ? `<span class="avx" style="float:none;margin:0 6px" title="${esc('Infos AV en plus dans le BEO :\n' + avExtra(e).join('\n'))}">ⓘ AV</span>` : ''}${rooms.map((r) => `<span class="rm">${esc(r)}</span>`).join('')}${tags}</div>
       ${e.detail ? `<div class="evdetail">${esc(e.detail)}</div>` : ''}${inst ? `<div class="evinst">${inst}</div>` : ''}</div>
     ${e.color ? `<span class="evstatus ${e.color}">${PL_COLOR[e.color]}</span>` : ''}</div>`;
 }
@@ -1420,12 +1436,40 @@ const pendingPhases = (e, tags = e.tags) => tags.filter((t) => PHASES.includes(t
 const isSplit = (e) => e.color === 'red' && (e.done || []).length > 0 && pendingPhases(e).length > 0;
 const tagChip = (t, e) => (e.done || []).includes(t) ? `<span class="tg ok" title="${esc(t)} validé (Prêt)">${esc(t)} ✓</span>` : `<span class="tg ${tagClass(t)}">${esc(t)}</span>`;
 
+// Section AV du BEO : ce qui va au-delà du simple « LCD (projecteur + écran) » → signalé sur la case
+const AV_PLAIN = /^(lcd( projector)?|projector|projecteur|beamer|[ée]cran)$/i;
+const AV_WORDS = /micro|\bhf\b|laptop|laptot|clicker|internet|connex|connection|wi-?fi|c[aâ]bl|visio|teams|zoom|hdmi|sono|vid[ée]o|projec|screen|[ée]cran|enregistr|stream|pr[ée]sentation|\bpc\b|ordinateur|cam[ée]ra|t[ée]l[ée]vision|\btv\b|pupitre|musique|haut-?parleur/i;
+const AV_STRONG = /micro|\bhf\b|laptop|laptot|clicker|internet|c[aâ]bl|hdmi|visio|sono|vid[ée]o|cam[ée]ra/i;
+const AV_LAYOUT = /flipchart|sous-?com|pl[ée]ni[èe]re|\btables?\b|chaises?|nappe|set ?up|classroom|u-shape|th[ée][aâ]tre|\beaux?\b|verres|salle vide/i;
+const avNote = (t, inAv) => !(AV_LAYOUT.test(t) && !AV_STRONG.test(t)) && (inAv ? !AV_PLAIN.test(t) : AV_WORDS.test(t));
+function avExtra(e) {
+  const out = [];
+  for (const b of e.info?.av || []) for (const g of b.groups || []) {
+    for (const t of g.lines) if (avNote(t, g.av)) out.push(t);
+    if (!g.av && avNote(g.label, false)) out.push(g.label);
+  }
+  return [...new Set(out)];
+}
+function avHtml(e) {
+  const av = e?.info?.av;
+  if (!e?.info?.beo) return '';
+  if (!Array.isArray(av)) return '<p class="muted" style="font-size:12.5px;margin:0">Section AV complète non disponible : réimporte le BEO Book de la semaine pour l\'afficher ici.</p>';
+  if (!av.length) return '<p class="muted" style="font-size:12.5px;margin:0">Pas de section « Mise en place & AV » pour cette salle dans le BEO.</p>';
+  const xtra = new Set(avExtra(e));
+  const line = (t) => xtra.has(t) ? `<span class="xtra">${esc(t)}</span>` : esc(t);
+  const body = av.map((b) => `${av.length > 1 || b.room ? `<div class="blk">${esc(b.start)}–${esc(b.end)} · ${esc(b.phase)}${b.room ? ' · ' + esc(b.room) : ''}</div>` : ''}`
+    + (b.groups || []).map((g) => `<div class="grp ${g.av ? 'av' : ''}">${g.label ? `<b>${line(g.label)}</b>` : ''}${g.lines.map((t) => `<div>${line(t)}</div>`).join('')}</div>`).join('')).join('');
+  return `<details class="beoav" ${xtra.size ? 'open' : ''}><summary>Section AV du BEO${xtra.size ? ` <span class="xtra" style="font-weight:600;font-size:12px">${xtra.size} info${xtra.size > 1 ? 's' : ''} en plus</span>` : ''}</summary>${body}</details>`;
+}
+
 function gridCell(e, hit, extra = '') {
   const stuff = e.room_ids.flatMap((id) => roomStuff(id));
-  const tip = [e.client, e.detail, ...beoInfoLines(e), stuff.length ? 'Dans la salle : ' + stuff.join(', ') : ''].filter(Boolean).join('\n');
+  const xtra = avExtra(e);
+  const tip = [e.client, e.detail, ...beoInfoLines(e), xtra.length ? 'Infos AV du BEO :\n   ' + xtra.join('\n   ') : '', stuff.length ? 'Dans la salle : ' + stuff.join(', ') : ''].filter(Boolean).join('\n');
   const time = e.start ? `<div class="t">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</div>` : '';
   const tags = e.tags.map((t) => tagChip(t, e)).join(' ');
-  return `<div class="pc ${e.color || ''} ${isSplit(e) ? 'split' : ''} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
+  const mark = xtra.length ? `<span class="avx" title="${esc('Infos AV en plus dans le BEO :\n' + xtra.join('\n'))}">ⓘ</span>` : '';
+  return `<div class="pc ${e.color || ''} ${isSplit(e) ? 'split' : ''} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${mark}${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
 }
 
 // ---- Offres (fiches techniques) : affichées dans la salle, au jour du montage
@@ -1660,8 +1704,8 @@ function openEvent(ev, pre) {
   $('#evRoomsHint').textContent = ev && !ev.room_ids.length && ev.rooms.length ? `(nom d'origine : ${ev.rooms.join(', ')})` : '';
   // BEO de l'événement (dernière version archivée : BEO isolé ou BEO Book)
   const beo = ev?.info?.beo;
-  const archived = beo && Object.values(PL.beoArchive || {}).some((w) => [w.book, ...(w.parts || [])].some((x) => x && x.beos.includes(String(beo))));
-  $('#evBeo').innerHTML = beo ? `<span class="muted" style="font-size:13px">BEO n° ${esc(beo)}</span> ${archived ? `<a class="btn small" style="padding:3px 10px;font-size:12.5px" href="${apercuUrl(`/api/beo/n/${encodeURIComponent(beo)}/pdf`, `BEO ${beo} - ${ev.client}`)}" target="_blank" rel="noopener">📄 Ouvrir le BEO</a>` : '<span class="muted" style="font-size:12px">(PDF non archivé)</span>'}` : '';
+  $('#evBeo').innerHTML = beo ? `<span class="muted" style="font-size:13px">BEO n° ${esc(beo)}</span> ${beoArchived(ev) ? `<a class="btn small" style="padding:3px 10px;font-size:12.5px" href="${beoUrl(ev)}" target="_blank" rel="noopener">📄 Voir le BEO</a>` : '<span class="muted" style="font-size:12px">(PDF non archivé)</span>'}` : '';
+  $('#evAv').innerHTML = avHtml(ev);
   // phases déjà validées (« Prêt ») : possibilité d'annuler et de remettre le matériel à sa place
   const dn = ev?.done || [];
   $('#evDone').style.display = dn.length ? '' : 'none';
@@ -1672,10 +1716,41 @@ function openEvent(ev, pre) {
   $('#evDlg').showModal();
   if (!ev) $('#evClient').focus();
 }
+// BEO de l'événement : dernière version archivée (BEO isolé ou BEO Book) → seulement ses pages dans l'aperçu
+const beoArchived = (ev) => !!ev?.info?.beo && Object.values(PL.beoArchive || {}).some((w) => [w.book, ...(w.parts || [])].some((x) => x && x.beos.includes(String(ev.info.beo))));
+const beoUrl = (ev) => apercuUrl(`/api/beo/n/${encodeURIComponent(ev.info.beo)}/pdf`, `BEO ${ev.info.beo} - ${ev.client}`) + `&beo=${encodeURIComponent(ev.info.beo)}`;
+
+// Clic sur une case qui a un BEO : choix Modifier / Voir le BEO
+function closeEvMenu() { document.querySelector('.evmenu')?.remove(); }
+function openEvMenu(ev, x, y) {
+  closeEvMenu();
+  const m = document.createElement('div'); m.className = 'evmenu';
+  const xtra = avExtra(ev);
+  m.innerHTML = `<div class="h">${esc(ev.client)}<small>BEO n° ${esc(ev.info.beo)}${ev.start ? ` · ${esc(ev.start)}–${esc(ev.end || '?')}` : ''}</small></div>
+    <a class="btn" href="${beoUrl(ev)}" target="_blank" rel="noopener" data-m="beo">📄 Voir le BEO</a>
+    <button type="button" class="btn ghost" data-m="edit">✎ Modifier</button>
+    ${xtra.length ? `<div class="muted" style="font-size:12px;padding:8px 6px 0"><b class="avx" style="float:none">ⓘ</b> Infos AV en plus : ${esc(xtra.join(' · '))}</div>` : ''}`;
+  document.body.append(m);
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(x, innerWidth - r.width - 8)) + 'px';
+  m.style.top = Math.max(8, Math.min(y, innerHeight - r.height - 8)) + 'px';
+  m.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    closeEvMenu();
+    if (b.dataset.m === 'edit') openEvent(ev);
+  });
+}
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('.evmenu')) closeEvMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEvMenu(); });
+window.addEventListener('scroll', closeEvMenu, true);
+
 $('#plBody').addEventListener('click', (e) => {
   if (e.target.closest('a.ofr')) return; // ouvre le PDF de l'offre (lien)
   const c = e.target.closest('[data-edit]');
-  if (c) return openEvent(PL.events.find((x) => x.id === Number(c.dataset.edit)));
+  if (c) {
+    const ev = PL.events.find((x) => x.id === Number(c.dataset.edit));
+    return beoArchived(ev) ? openEvMenu(ev, e.clientX + 4, e.clientY + 4) : openEvent(ev);
+  }
   const n = e.target.closest('[data-new]');
   if (n) openEvent(null, { date: n.dataset.d, room: Number(n.dataset.r) });
 });

@@ -29,7 +29,7 @@
       <div class="pp-f"><span>Couleur</span><div class="pp-seg" id="ppColor"><button type="button" data-v="1" class="on">Couleur</button><button type="button" data-v="0">Noir et blanc</button></div></div>
       ${app() ? '<label class="pp-r"><input type="checkbox" id="ppDuplex"> Recto-verso</label>' : ''}
       <button type="button" class="pp-btn main" id="ppGo">🖨 Imprimer</button>
-      ${opt.downloadUrl ? `<a class="pp-btn" id="ppDl" href="${esc(opt.downloadUrl)}" download="${esc(opt.downloadName || 'document.pdf')}">⬇ Télécharger le PDF</a>` : ''}
+      ${opt.downloadUrl ? `<a class="pp-btn" id="ppDl" href="${esc(opt.downloadUrl)}" download="${esc(opt.downloadName || 'document.pdf')}">${esc(opt.downloadLabel || '⬇ Télécharger le PDF')}</a>` : ''}
       ${opt.extraButtons || ''}
       <button type="button" class="pp-btn ghost" id="ppClose">Fermer</button>
       <p class="pp-msg" id="ppMsg"></p>`;

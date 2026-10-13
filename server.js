@@ -346,7 +346,8 @@ function previewBeoPdf(buf, filename) {
       if (twin.color !== 'green' && (twin.color || '') !== e.color) changes.push({ what: 'Statut', from: COLOR_LABEL[twin.color || ''], to: COLOR_LABEL[e.color] });
       if (beopdf.nz(twin.client) !== beopdf.nz(e.client)) changes.push({ what: 'Société', from: twin.client, to: e.client });
       if (movedFrom != null) changes.push({ what: 'Salle', from: nameOf.get(movedFrom) || '?', to: nameOf.get(e.room_id) });
-      state = changes.length ? 'differs' : twin.info?.beo ? 'same' : 'info'; // 'info' : identique, mais les détails du BEO manquent
+      // 'info' : identique, mais les détails du BEO manquent (ou la section AV complète, absente des imports plus anciens)
+      state = changes.length ? 'differs' : twin.info?.beo && Array.isArray(twin.info.av) ? 'same' : 'info';
     }
     return {
       i, ...e, room_name: nameOf.get(e.room_id), state, existing_id, changes, moved_from: movedFrom,
@@ -425,6 +426,18 @@ function beoFileFor(num) {
     if (e && e.beos.includes(String(num)) && (!best || e.imported_at > best.imported_at)) best = e;
   }
   return best;
+}
+// Pages de ce BEO dans son fichier archivé (BEO Book : seulement les pages de l'événement)
+const beoPagesCache = new Map(); // fichier → { mtime, pages }
+function beoPagesFor(num) {
+  const e = beoFileFor(num);
+  const file = e && path.join(BEO_DIR, e.file);
+  if (!e || !file.startsWith(BEO_DIR) || !fs.existsSync(file)) throw new Error('BEO introuvable dans les archives');
+  const mtime = fs.statSync(file).mtimeMs;
+  let c = beoPagesCache.get(file);
+  if (!c || c.mtime !== mtime) { c = { mtime, pages: beopdf.beoPages(fs.readFileSync(file)) }; beoPagesCache.set(file, c); }
+  const total = Object.values(c.pages).flat().length;
+  return { beo: String(num), pages: c.pages[String(num)] || [], book: e.beos.length > 1, original: e.original, total };
 }
 
 // ---- Fiches techniques (« Offres ») : le PDF est conservé et affiché dans le planning au jour du montage
@@ -944,6 +957,12 @@ const server = http.createServer((req, res) => {
     if (!b || !file.startsWith(BEO_DIR) || !fs.existsSync(file)) { res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' }); return res.end('BEO Book introuvable pour cette semaine'); }
     res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(b.original || 'BEO Book.pdf')}` });
     return fs.createReadStream(file).pipe(res);
+  }
+  // Pages d'un BEO dans son PDF archivé : /api/beo/n/12345/pages
+  const bpg = /^\/api\/beo\/n\/(\d+)\/pages$/.exec(url.pathname);
+  if (req.method === 'GET' && bpg) {
+    try { const out = beoPagesFor(bpg[1]); res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(out)); }
+    catch (e) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: e.message })); }
   }
   // Affichage du PDF d'une offre dans le navigateur
   const op = /^\/api\/offers\/(\d+)\/pdf$/.exec(url.pathname);
