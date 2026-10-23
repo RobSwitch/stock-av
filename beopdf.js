@@ -16,7 +16,9 @@ const frDate = (s) => {
 const shortDate = (s) => { const m = /(\d{2})\.(\d{2})\.(\d{2})$/.exec(s || ''); return m ? `20${m[3]}-${m[2]}-${m[1]}` : null; };
 const clean = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
-const HEADER_Y = 92, FOOTER_Y = 795; // zone utile d'une page (en-tête et pied de page répétés)
+// zone utile d'une page (en-tête et pied de page répétés) : l'en-tête finit avec « REF-… » (y ≈ 77) ;
+// sur une page de suite, la première ligne (tableau ou section AV) commence dès y ≈ 89
+const HEADER_Y = 82, FOOTER_Y = 795;
 const RIGHT_X = 295;                 // colonne de droite (agenda / AV)
 const ROOM_X = [190, 258];           // colonne « Salle » du tableau
 
@@ -141,50 +143,53 @@ function parseBeoBook(buf, match) {
     const names = [h.account, h.eventName].filter(Boolean);
     const client = names.sort((a, c) => a.length - c.length)[0] || `BEO ${b.number}`;
     const color = /prospect/i.test(h.status) ? 'yellow' : 'red';
-    // regroupe les lignes du tableau par (date, salle de l'application)
+    // regroupe les lignes du tableau par (date, salle(s) de l'application) : « Redwood 1 & 2 » reste UN événement
+    // sur deux salles (salle réunie), à côté d'un éventuel « Redwood 3 » séparé
     const groups = new Map();
     const noteRoom = (name, n = 1) => {
       const ids = match(name);
       if (!ids.length) unmatched.set(name, (unmatched.get(name) || 0) + n);
       return ids;
     };
+    const setKey = (ids) => [...ids].map(String).sort().join(',');
     for (const r of b.rows) {
       const ids = noteRoom(r.room);
+      if (!ids.length) continue;
       const date = r.date || h.date;
       if (h.date && r.date && r.date !== h.date) warnings.push(`BEO ${b.number} : ligne du ${r.date} différente de la date de l'événement (${h.date}) — date de la ligne utilisée`);
-      for (const id of ids) {
-        const key = `${date}|${id}`;
-        const g = groups.get(key) || { date, id, start: r.start, end: r.end, rows: 0, info: [] };
-        if (r.start < g.start) g.start = r.start;
-        if (r.end > g.end) g.end = r.end;
-        g.rows++; groups.set(key, g);
-        const line = { start: r.start, end: r.end, name: r.name, sign: r.sign, setup: r.setup, pax: r.pax };
-        if (!g.info.some((x) => JSON.stringify(x) === JSON.stringify(line))) g.info.push(line);
-      }
+      const key = `${date}|${setKey(ids)}`;
+      const g = groups.get(key) || { date, ids, start: r.start, end: r.end, rows: 0, info: [], av: null };
+      if (r.start < g.start) g.start = r.start;
+      if (r.end > g.end) g.end = r.end;
+      g.rows++; groups.set(key, g);
+      const line = { start: r.start, end: r.end, name: r.name, sign: r.sign, setup: r.setup, pax: r.pax };
+      if (!g.info.some((x) => JSON.stringify(x) === JSON.stringify(line))) g.info.push(line);
     }
-    // matériel AV par salle
-    const avByRoom = new Map();
+    // matériel AV : un bloc va à l'événement de la même salle (ou salle réunie) ; sinon à ceux qui la recouvrent
     for (const blk of b.av.blocks) {
-      for (const id of noteRoom(blk.room, 0)) {
-        const a = avByRoom.get(id) || { av: [], other: [], blocks: [] };
+      const ids = noteRoom(blk.room, 0);
+      if (!ids.length) continue;
+      const k = setKey(ids);
+      let targets = [...groups.values()].filter((g) => setKey(g.ids) === k);
+      if (!targets.length) targets = [...groups.values()].filter((g) => g.ids.some((id) => ids.includes(id)));
+      if (!targets.length) { // salle présente dans l'agenda mais pas dans le tableau
+        const g = { date: h.date, ids, start: blk.start, end: blk.end, rows: 0, info: [], av: null };
+        groups.set(`${h.date}|${k}`, g); targets = [g];
+      }
+      for (const g of targets) {
+        const a = (g.av ||= { av: [], other: [], blocks: [] });
         a.av.push(...blk.av); a.other.push(...blk.other);
         a.blocks.push({ start: blk.start, end: blk.end, phase: blk.phase, room: blk.room, groups: blk.groups });
-        avByRoom.set(id, a);
-        const g = [...groups.values()].find((x) => x.id === id);
-        if (!g) { // salle présente dans l'agenda mais pas dans le tableau
-          const key = `${h.date}|${id}`;
-          groups.set(key, { date: h.date, id, start: blk.start, end: blk.end, rows: 0, info: [] });
-        }
       }
     }
     for (const g of groups.values()) {
-      const a = avByRoom.get(g.id);
+      const a = g.av;
       const items = a ? [...new Set(a.av.map(clean))] : [];
       const microInOther = a ? a.other.some((t) => /\bmicros?\b/i.test(t) && /pr[ée]voir|mettre|besoin|ajout/i.test(t)) : false;
       let detail = describeAv(items);
       if (microInOther && !/HFS/.test(detail)) detail = detail ? detail.replace(/^LCD/, 'LCD + HFS') : 'HFS';
       events.push({
-        beo: b.number, date: g.date, room_id: g.id, start: g.start, end: g.end,
+        beo: b.number, date: g.date, room_ids: g.ids, start: g.start, end: g.end,
         client, account: h.account, event_name: h.eventName, status: h.status, color,
         detail, av: items, hasAv: !!a, rows: g.rows,
         // n° de BEO : retrouve l'événement dans une version mise à jour ; av : section « Mise en place salles & AV » complète
@@ -192,7 +197,7 @@ function parseBeoBook(buf, match) {
       });
     }
   }
-  events.sort((a, c) => a.date.localeCompare(c.date) || a.room_id - c.room_id || a.start.localeCompare(c.start));
+  events.sort((a, c) => a.date.localeCompare(c.date) || String(a.room_ids[0]).localeCompare(String(c.room_ids[0]), undefined, { numeric: true }) || a.start.localeCompare(c.start));
   // liste des BEO du PDF (un BEO Book complet en contient beaucoup, un envoi isolé un seul ou quelques-uns)
   const beoList = beos.filter((b) => b.header).map((b) => ({ number: b.number, date: b.header.date, client: [b.header.account, b.header.eventName].filter(Boolean).sort((a, c) => a.length - c.length)[0] || '' }));
   return { beoCount: beos.length, beoList, events, unmatched: [...unmatched].map(([name, count]) => ({ name, count })).sort((a, c) => c.count - a.count), warnings };
@@ -201,7 +206,7 @@ function parseBeoBook(buf, match) {
 // ---- Correspondance « nom de salle du PDF » → salle(s) de l'application
 const nz = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9+]/g, '');
 const PDF_ALIAS = { // nom normalisé du PDF → noms normalisés (sans espaces) des salles de l'application
-  boisdentelle: ['bdt'], flamboyant: ['flamby'], auditoriumcanopee: ['canopee'],
+  boisdentelle: ['bdt'], flamboyant: ['flamby'], auditoriumcanopee: ['canopee'], auditoriumbaobab: ['baobab'],
   arganforeti: ['arganforet1'], arganforetii: ['arganforet2'], arganforet1: ['arganforet1'], arganforet2: ['arganforet2'],
 };
 function editDist(a, b) {
@@ -236,11 +241,17 @@ function makeMatcher(locs, saved = {}) {
   };
   return (raw) => {
     const s = String(raw || '').trim();
-    const rom = /^(.*?)\s+I\s*&\s*II$/.exec(s); // « Argan Fôret I & II »
-    if (rom) return [...new Set([...one(`${rom[1]} I`), ...one(`${rom[1]} II`)])];
-    // « Cherry 1+2 », « Cherry 1+2+3 » → plusieurs salles
-    const m = /^(.*?)(\d(?:\s*\+\s*\d)+)$/.exec(s);
-    if (m) return [...new Set(m[2].split('+').map((d) => d.trim()).flatMap((d) => one(`${m[1]}${d}`)))];
+    // un choix mémorisé pour le nom complet (« Cocobolo 1 & 2 » → …) passe avant le découpage
+    const k = nz(s).replace(/\+/g, '');
+    if (saved[k]) return one(s);
+    const rom = /^(.*?)\s+(I{1,3})((?:\s*(?:&|\+|,|\bet\b|\band\b)\s*I{1,3})+)$/.exec(s); // « Argan Fôret I & II »
+    if (rom) return [...new Set([rom[2], ...rom[3].split(/&|\+|,|\bet\b|\band\b/).map((x) => x.trim()).filter(Boolean)].flatMap((n) => one(`${rom[1]} ${n}`)))];
+    // salles réunies : « Cherry 1+2 », « Redwood 1 & 2 », « Cocobolo 1, 2 & 3 », « Mangrove 3 et 4 » → plusieurs salles
+    const m = /^(.*?)\s*(\d(?:\s*(?:\+|&|,|\/|\bet\b|\band\b)\s*\d)+)$/i.exec(s);
+    if (m) {
+      const ids = m[2].split(/\+|&|,|\/|\bet\b|\band\b/i).map((d) => d.trim()).filter(Boolean).map((d) => one(`${m[1]} ${d}`));
+      if (ids.every((x) => x.length)) return [...new Set(ids.flat())];
+    }
     return one(s);
   };
 }

@@ -202,6 +202,21 @@ function offerMovesList() {
   return db.prepare('SELECT * FROM offer_moves ORDER BY id').all().map((m) => ({ ...m, lines: JSON.parse(m.lines), external: JSON.parse(m.external || '[]') }));
 }
 
+// Matériel hors stock : une note (« 3 multi », « 2 boîtiers HD-SDI/HDMI ») considérée comme installée dans la salle
+// dès qu'elle est ajoutée — pas de catalogue, pas de déplacement de stock, pas d'étape « montage » à valider.
+// room_ids : la salle, ou les parties d'une salle réunie (affichée une seule fois). removed_ts : démonté (gardé pour l'historique)
+db.exec(`
+CREATE TABLE IF NOT EXISTS room_notes (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  room_ids TEXT NOT NULL, qty INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL,
+  event_id INTEGER, client TEXT, removed_ts TEXT
+);
+`);
+function roomNotesList() {
+  return db.prepare('SELECT * FROM room_notes WHERE removed_ts IS NULL ORDER BY id').all().map((n) => ({ ...n, room_ids: JSON.parse(n.room_ids) }));
+}
+
 // version : change à chaque modification du planning (les autres postes se mettent à jour)
 function beoStatus() {
   return { version: Number(metaGet('beo_version') || 0) };
@@ -248,7 +263,7 @@ function planningData() {
       info: r.info ? JSON.parse(r.info) : null, done: JSON.parse(r.done || '[]'),
     };
   });
-  return { events, offers: offersList(), offerMoves: offerMovesList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
+  return { events, offers: offersList(), offerMoves: offerMovesList(), notes: roomNotesList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
 }
 
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -317,6 +332,15 @@ const beoArchive = () => { const a = metaJson('beo_archive'); a.weeks ||= {}; re
 const beoNums = (list) => [...new Set((list || []).map(String))];
 const COLOR_LABEL = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect', '': 'Sans couleur' };
 
+// Nom lisible d'un groupe de salles : « Redwood 1 + 2 + 3 » (parties d'une même salle), sinon « Teck + Ginko »
+function roomsLabel(ids, nameOf) {
+  const names = ids.map((id) => nameOf.get(id) || '?');
+  const parts = names.map((n) => /^(.*?)\s*(\d+)$/.exec(n));
+  if (names.length > 1 && parts.every((p) => p && p[1] === parts[0][1])) return `${parts[0][1]} ${parts.map((p) => Number(p[2])).sort((a, b) => a - b).join(' + ')}`;
+  return names.join(' + ');
+}
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+
 function previewBeoPdf(buf, filename) {
   if (buf.subarray(0, 5).toString() !== '%PDF-') throw new Error("Ce fichier n'est pas un PDF");
   const locs = db.prepare("SELECT id, name FROM locations WHERE kind='salle'").all();
@@ -324,20 +348,39 @@ function previewBeoPdf(buf, filename) {
   const r = beopdf.parseBeoBook(buf, beopdf.makeMatcher(locs, saved));
   const nameOf = new Map(locs.map((l) => [l.id, l.name]));
   const existing = planningData().events;
+  const withMoves = new Set(db.prepare('SELECT DISTINCT event_id FROM offer_moves').all().map((m) => m.event_id));
   const matched = new Set();
+  const twins = new Map(); // n° de ligne de l'aperçu → événement du planning
+  const onDay = (x, d) => x.date <= d && d <= x.end_date;
+  const overlaps = (a, b) => a.some((id) => b.includes(id));
+  // Recherche de l'événement correspondant, du plus sûr au moins sûr (une case du planning ne sert qu'une fois) :
+  // 1) même n° de BEO, mêmes salles  2) même n° de BEO, salles en commun (salle réunie ou divisée)
+  // 3) même société, salles en commun  4) même n° de BEO ce jour-là, seul candidat (salle changée)
+  const pass = (pred, onlyOne) => r.events.forEach((e, i) => {
+    if (twins.has(i)) return;
+    const c = existing.filter((x) => !matched.has(x.id) && onDay(x, e.date) && pred(x, e));
+    if (c.length && (!onlyOne || c.length === 1)) { twins.set(i, c[0]); matched.add(c[0].id); }
+  });
+  const sameBeo = (x, e) => !!x.info?.beo && x.info.beo === e.beo;
+  pass((x, e) => sameBeo(x, e) && sameSet(x.room_ids, e.room_ids));
+  pass((x, e) => sameBeo(x, e) && overlaps(x.room_ids, e.room_ids));
+  pass((x, e) => beopdf.nz(x.client) === beopdf.nz(e.client) && overlaps(x.room_ids, e.room_ids));
+  pass((x, e) => sameBeo(x, e), true);
+  // Salle réunie dans le BEO (« Redwood 1 & 2 ») alors que le planning a une case par partie (anciens imports) :
+  // les autres cases du même BEO dans ces salles sont fusionnées dans la première (sauf si du matériel y a été validé)
+  const absorbed = new Map();
+  r.events.forEach((e, i) => {
+    if (!twins.has(i) || e.room_ids.length < 2) return;
+    const list = existing.filter((x) => !matched.has(x.id) && onDay(x, e.date) && sameBeo(x, e) && x.room_ids.every((id) => e.room_ids.includes(id)) && !withMoves.has(x.id));
+    list.forEach((x) => matched.add(x.id));
+    if (list.length) absorbed.set(i, list);
+  });
   const events = r.events.map((e, i) => {
-    const onDay = existing.filter((x) => x.date <= e.date && e.date <= x.end_date);
-    const same = onDay.filter((x) => x.room_ids.includes(e.room_id));
-    // 1) même n° de BEO dans la salle  2) même société dans la salle  3) même n° de BEO ce jour-là, dans une autre salle (salle changée)
-    let twin = same.find((x) => x.info?.beo && x.info.beo === e.beo) || same.find((x) => beopdf.nz(x.client) === beopdf.nz(e.client));
-    let movedFrom = null;
-    if (!twin) {
-      const other = onDay.filter((x) => x.info?.beo && x.info.beo === e.beo && !matched.has(x.id));
-      if (other.length === 1) { twin = other[0]; movedFrom = twin.room_ids.find((id) => !r.events.some((y) => y.beo === e.beo && y.room_id === id)) ?? twin.room_ids[0]; }
-    }
+    const twin = twins.get(i) || null;
+    const absorb = absorbed.get(i) || [];
     let state = 'new', existing_id = null; const changes = [];
     if (twin) {
-      matched.add(twin.id); existing_id = twin.id;
+      existing_id = twin.id;
       const span = (a, b) => `${a || '?'}–${b || '?'}`;
       if ((twin.start || '') !== e.start || (twin.end || '') !== e.end) changes.push({ what: 'Horaire', from: span(twin.start, twin.end), to: span(e.start, e.end) });
       // un BEO sans description AV n'efface jamais une description écrite dans le planning
@@ -345,12 +388,16 @@ function previewBeoPdf(buf, filename) {
       // le statut « Prêt » (vert) n'est jamais écrasé par le BEO ; sinon on suit le BEO (Prospect ↔ À préparer)
       if (twin.color !== 'green' && (twin.color || '') !== e.color) changes.push({ what: 'Statut', from: COLOR_LABEL[twin.color || ''], to: COLOR_LABEL[e.color] });
       if (beopdf.nz(twin.client) !== beopdf.nz(e.client)) changes.push({ what: 'Société', from: twin.client, to: e.client });
-      if (movedFrom != null) changes.push({ what: 'Salle', from: nameOf.get(movedFrom) || '?', to: nameOf.get(e.room_id) });
+      if (!sameSet(twin.room_ids, e.room_ids)) {
+        const merged = absorb.length ? ` (${absorb.length + 1} cases réunies en une)` : twin.room_ids.length > e.room_ids.length ? ' (salle divisée)' : '';
+        changes.push({ what: 'Salle', from: [twin, ...absorb].map((x) => roomsLabel(x.room_ids, nameOf)).join(', '), to: roomsLabel(e.room_ids, nameOf) + merged });
+      }
       // 'info' : identique, mais les détails du BEO manquent (ou la section AV complète, absente des imports plus anciens)
       state = changes.length ? 'differs' : twin.info?.beo && Array.isArray(twin.info.av) ? 'same' : 'info';
     }
+    const same = existing.filter((x) => onDay(x, e.date) && overlaps(x.room_ids, e.room_ids));
     return {
-      i, ...e, room_name: nameOf.get(e.room_id), state, existing_id, changes, moved_from: movedFrom,
+      i, ...e, room_name: roomsLabel(e.room_ids, nameOf), state, existing_id, changes, absorb: absorb.map((x) => x.id),
       was_ready: !!twin && twin.color === 'green', ready_done: twin ? twin.done || [] : [],
       clash: !twin && same.length ? same.map((x) => x.client) : [],
       selected: state === 'differs' || state === 'info' || (state === 'new' && e.hasAv),
@@ -457,6 +504,8 @@ CREATE TABLE IF NOT EXISTS offers (
 if (!db.prepare('PRAGMA table_info(offers)').all().some((c) => c.name === 'links')) db.exec('ALTER TABLE offers ADD COLUMN links TEXT');
 // file : chemin du PDF dans fichiers/offres, rangé comme les BEO → « AAAA - Semaine NN (du … au …)\Fiche technique - Société V2.pdf »
 if (!db.prepare('PRAGMA table_info(offers)').all().some((c) => c.name === 'file')) db.exec('ALTER TABLE offers ADD COLUMN file TEXT');
+// label : nom affiché sur l'étiquette dans la grille (« Day 1 », « AV4 »…) ; vide → « Offre »
+if (!db.prepare('PRAGMA table_info(offers)').all().some((c) => c.name === 'label')) db.exec('ALTER TABLE offers ADD COLUMN label TEXT');
 const OFFER_DIR = path.join(DATA_DIR, 'fichiers', 'offres');
 fs.mkdirSync(OFFER_DIR, { recursive: true });
 const legacyOfferFile = (id) => path.join(OFFER_DIR, `${Number(id)}.pdf`); // anciennes versions : « 12.pdf »
@@ -498,7 +547,7 @@ const tmpFile = (token) => {
 function offersList() {
   const known = new Set(db.prepare("SELECT id FROM locations WHERE kind='salle'").all().map((l) => l.id));
   return db.prepare('SELECT * FROM offers ORDER BY id').all().map((o) => ({
-    id: o.id, ts: o.ts, filename: o.filename, client: o.client, version: o.version, title: o.title, dated: o.dated,
+    id: o.id, ts: o.ts, filename: o.filename, client: o.client, version: o.version, title: o.title, dated: o.dated, label: o.label || '',
     rooms: JSON.parse(o.rooms).map((r) => ({ ...r, room_ids: (r.room_ids || []).filter((i) => known.has(i)) })),
     services: JSON.parse(o.services || '[]'),
   }));
@@ -592,6 +641,20 @@ function undoOffer(offerId) {
   }
 }
 
+// Événement fusionné dans un autre (salle réunie) : les étiquettes ajoutées par les offres pointent vers celui qui reste
+function relinkOffers(fromId, toId) {
+  for (const o of db.prepare('SELECT id, links FROM offers').all()) {
+    const links = JSON.parse(o.links || '[]');
+    if (!links.some((l) => l.id === fromId)) continue;
+    const out = [];
+    for (const l of links) {
+      const x = l.id === fromId ? { ...l, id: toId, created: false } : l;
+      if (!out.some((y) => y.id === x.id && y.tag === x.tag)) out.push(x);
+    }
+    db.prepare('UPDATE offers SET links=? WHERE id=?').run(JSON.stringify(out), o.id);
+  }
+}
+
 function saveOffer(b, j) {
   const src = tmpFile(b.token);
   if (!fs.existsSync(src)) throw new Error('Envoi expiré : choisis à nouveau le fichier');
@@ -632,6 +695,37 @@ function saveOffer(b, j) {
   fs.renameSync(src, dest);
   j?.created.push(dest);
   return id;
+}
+
+// Modifier une offre enregistrée depuis une case du planning : nom affiché, société, salles d'une partie de la fiche
+// (retirée de la case → « hors grille » si plus aucune salle ; ajoutée à une case → salles de la case).
+// Les étiquettes Montage / Show / Démontage sont recalculées. b = { id, client?, label?, rooms?: [{ index, room_ids }] }
+function updateOffer(b) {
+  const o = db.prepare('SELECT * FROM offers WHERE id=?').get(Number(b.id));
+  if (!o) throw new Error('Offre introuvable (supprimée ?)');
+  const client = b.client !== undefined ? String(b.client || '').trim() : o.client;
+  if (!client) throw new Error('Indique le nom de la société / du client');
+  const label = b.label !== undefined ? String(b.label || '').replace(/\s+/g, ' ').trim().slice(0, 40) : o.label || '';
+  const rooms = JSON.parse(o.rooms || '[]');
+  const changes = Array.isArray(b.rooms) ? b.rooms : [];
+  for (const ch of changes) {
+    const r = rooms[Number(ch.index)];
+    if (!r) throw new Error('Salle de la fiche introuvable');
+    r.room_ids = [...new Set((ch.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id));
+    r.skip = !r.room_ids.length; // plus de salle : la fiche reste dans la liste des offres, sans case dans la grille
+  }
+  const relink = changes.length > 0 || client !== o.client;
+  // matériel déjà monté / démonté avec cette fiche : ses cases ne bougent plus (sinon l'historique ne suit plus)
+  if (relink && db.prepare('SELECT 1 FROM offer_moves WHERE offer_id=?').get(o.id)) {
+    throw new Error('Du matériel a déjà été validé (« Prêt ») avec cette fiche : annule d\'abord la validation dans la case pour changer sa salle ou sa société');
+  }
+  inTransaction(() => {
+    let links = JSON.parse(o.links || '[]');
+    if (relink) { undoOffer(o.id); links = applyOffer(client, rooms); learnEquipment(rooms); }
+    db.prepare('UPDATE offers SET client=?, label=?, rooms=?, links=? WHERE id=?').run(client, label, JSON.stringify(rooms), JSON.stringify(links), o.id);
+    bumpPlanning();
+  });
+  return planningData();
 }
 
 // Équipement inclus des salles appris des fiches : on garde pour chaque élément la plus grande quantité vue.
@@ -1091,10 +1185,15 @@ function checksList() {
   }
   const lastMove = new Map(); // offre + salle → dernière validation (montage / démontage) du matériel externe
   for (const m of pd.offerMoves) for (const x of m.external) for (const id of x.room_ids || []) lastMove.set(`${x.offer_id}|${x.room_name}|${id}`, { phase: m.phase, x });
+  // matériel externe d'une salle réunie (Cherry 1 + 2 + 3) : signalé une fois, dans sa première partie
+  const label = (ids) => roomsLabel(ids, new Map([...names].map(([id, l]) => [id, l.name])));
   for (const [k, v] of lastMove) if (v.phase === 'Montage') {
     const id = Number(k.split('|')[2]);
-    (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`matériel ${v.x.supplier || 'externe'}`);
+    if (v.x.room_ids?.length > 1 && id !== v.x.room_ids[0]) continue;
+    (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`matériel ${v.x.supplier || 'externe'}${v.x.room_ids?.length > 1 ? ` (${label(v.x.room_ids)})` : ''}`);
   }
+  // matériel hors stock (notes) : compté une fois, dans la première partie d'une salle réunie
+  for (const n of pd.notes) { const id = n.room_ids[0]; (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`${n.qty} × ${n.name} (hors stock${n.room_ids.length > 1 ? ', ' + label(n.room_ids) : ''})`); }
   for (const [id, mat] of inRoom) {
     const soon = evs.some((e) => e.room_ids.includes(id) && e.end_date >= today && e.date <= addDaysIso(today, 2));
     if (!soon) add('warn', 'idle', `${id}:${[...new Set(mat)].sort()}`, { date: today, room_id: id, title: 'Matériel en salle, rien de prévu',
@@ -1155,20 +1254,25 @@ const routes = {
       for (const e of list) {
         const old = e.replace_id ? db.prepare('SELECT * FROM planning_events WHERE id=?').get(e.replace_id) : null;
         if (old && e.info_only) { db.prepare('UPDATE planning_events SET info=? WHERE id=?').run(JSON.stringify(e.info), old.id); updated++; continue; }
+        // salles du BEO (une salle réunie « Redwood 1 & 2 » = un seul événement sur ses parties)
+        const roomIds = (Array.isArray(e.room_ids) ? e.room_ids : [e.room_id]).map(Number);
+        // cases d'un ancien import (une par partie) fusionnées dans celle-ci : étiquettes gardées, liens des offres repris
+        const absorb = (Array.isArray(e.absorb) ? e.absorb : []).map(Number)
+          .map((id) => db.prepare('SELECT * FROM planning_events WHERE id=?').get(id))
+          .filter((x) => x && old && x.id !== old.id && !db.prepare('SELECT 1 FROM offer_moves WHERE event_id=?').get(x.id));
         const ev = {
-          id: old ? old.id : null, date: e.date, end_date: old ? old.end_date : e.date, room_ids: [e.room_id],
+          id: old ? old.id : null, date: e.date, end_date: old ? old.end_date : e.date, room_ids: roomIds,
           client: e.client, detail: e.detail || (old ? old.detail : '') || '', start: e.start, end: e.end, // description vide dans le BEO : on garde celle du planning
           color: old && old.color === 'green' ? 'green' : e.color, // un événement « Prêt » le reste
-          tags: old ? JSON.parse(old.tags || '[]') : [], urgent: old ? !!old.urgent : false, info: e.info || null,
+          tags: [...new Set([old, ...absorb].filter(Boolean).flatMap((x) => JSON.parse(x.tags || '[]')))],
+          urgent: [old, ...absorb].some((x) => x && x.urgent), info: e.info || null,
         };
-        if (old) {
-          let ids = JSON.parse(old.room_ids || '[]');
-          if (e.moved_from != null) ids = ids.filter((id) => id !== Number(e.moved_from)); // salle changée dans le BEO
-          if (!ids.includes(e.room_id)) ids.push(e.room_id);
-          ev.room_ids = ids; ev.date = old.date;
-        }
-        try { upsertPlanningEvent(ev); if (old) updated++; else added++; }
-        catch (err) { skipped.push(`${e.client} (${e.date}) : ${err.message}`); }
+        if (old) ev.date = old.date;
+        try {
+          const id = upsertPlanningEvent(ev);
+          for (const x of absorb) { relinkOffers(x.id, id); db.prepare('DELETE FROM planning_events WHERE id=?').run(x.id); }
+          if (old) updated++; else added++;
+        } catch (err) { skipped.push(`${e.client} (${e.date}) : ${err.message}`); }
       }
       for (const id of removeIds) removed += db.prepare('DELETE FROM planning_events WHERE id=?').run(id).changes;
       bumpPlanning();
@@ -1211,6 +1315,33 @@ const routes = {
       j.keep(file);
       return planningData();
     });
+  },
+  // Offre modifiée depuis une case : nom affiché seul (pas noté au journal) ou salle / société (noté, annulable)
+  'POST /api/offers/update': (b) => {
+    const o = db.prepare('SELECT client, version, filename FROM offers WHERE id=?').get(Number(b.id));
+    if (!o) throw new Error('Offre introuvable (déjà supprimée ?)');
+    if (!(Array.isArray(b.rooms) && b.rooms.length) && (b.client === undefined || String(b.client).trim() === o.client)) return updateOffer(b);
+    return journaled('offre-modif', o.filename, `Fiche technique modifiée — ${o.client}${o.version ? ' ' + o.version : ''}`, () => updateOffer(b));
+  },
+  // Matériel hors stock (note) : installé dans la salle dès l'ajout, retiré quand il est démonté
+  'POST /api/notes/add': (b) => {
+    const ids = [...new Set((b.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id));
+    if (!ids.length) throw new Error('Choisis d\'abord la salle');
+    const lines = parseEquipment(b.text).filter((l) => l.qty > 0 && l.name);
+    if (!lines.length) throw new Error('Écris le matériel, ex. « 3 multi » ou « 2 boîtiers HD-SDI/HDMI »');
+    const ev = b.event_id ? db.prepare('SELECT id, client FROM planning_events WHERE id=?').get(Number(b.event_id)) : null;
+    inTransaction(() => {
+      for (const l of lines) db.prepare('INSERT INTO room_notes (room_ids, qty, name, event_id, client) VALUES (?,?,?,?,?)')
+        .run(JSON.stringify(ids), l.qty, l.name.slice(0, 120), ev?.id ?? null, ev?.client ?? (String(b.client || '').trim() || null));
+      bumpPlanning();
+    });
+    return planningData();
+  },
+  'POST /api/notes/remove': (b) => {
+    const r = db.prepare("UPDATE room_notes SET removed_ts=datetime('now','localtime') WHERE id=? AND removed_ts IS NULL").run(Number(b.id));
+    if (!r.changes) throw new Error('Déjà démonté (ou introuvable)');
+    bumpPlanning();
+    return planningData();
   },
   'POST /api/planning/event/delete': (b) => {
     db.prepare('DELETE FROM planning_events WHERE id=?').run(b.id);

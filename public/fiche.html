@@ -195,9 +195,23 @@ function externalIn(roomId) { // dernière validation (montage / démontage) de 
   const out = {};
   for (const [k, m] of last) {
     if (m.phase !== 'Montage') continue;
-    for (const x of m.external) if (`${x.offer_id}|${x.room_name}` === k && x.room_ids.includes(roomId)) out[x.supplier] = (out[x.supplier] || 0) + x.qty;
+    // salle réunie (Coco 1 + 2 + 3) : compté une seule fois, dans sa première partie
+    for (const x of m.external) if (`${x.offer_id}|${x.room_name}` === k && x.room_ids[0] === roomId) {
+      const key = x.room_ids.length > 1 ? `${x.supplier} — ${roomsLabel(x.room_ids)}` : x.supplier;
+      out[key] = (out[key] || 0) + x.qty;
+    }
   }
-  return out; // { CAS: 12, … }
+  return out; // { CAS: 12, 'CAS — Coco 1 + 2 + 3': 37, … }
+}
+// matériel hors stock (notes « 3 multi ») : compté une fois, dans la première partie d'une salle réunie
+function roomsLabel(ids) {
+  const names = ids.map((id) => DATA.locations.find((l) => l.id === id)?.name || '?');
+  const parts = names.map((n) => /^(.*?)\s*(\d+)$/.exec(n));
+  if (names.length > 1 && parts.every((p) => p && p[1] === parts[0][1])) return `${parts[0][1]} ${parts.map((p) => Number(p[2])).sort((a, b) => a - b).join(' + ')}`;
+  return names.join(' + ');
+}
+function notesIn(roomId) {
+  return (DATA.notes || []).filter((n) => n.room_ids[0] === roomId).map((n) => `${n.qty} × ${n.name}${n.room_ids.length > 1 ? ` (${roomsLabel(n.room_ids)})` : ''}`);
 }
 // heure à laquelle la salle se libère : fin du dernier événement « client » du jour
 // (un montage / démontage créé par une fiche technique, sans heure de fin, est notre travail : il ne bloque pas la salle)
@@ -217,13 +231,13 @@ function roomRows(areas, day) {
     for (const l of locs.filter((x) => test(x.floor))) {
       const today = DATA.events.filter((e) => onDay(e, day) && e.room_ids.includes(l.id)).sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
       const tmw = tasks1.filter((e) => e.room_ids.includes(l.id)).sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
-      const stock = stockIn(l.id), ext = externalIn(l.id);
-      const hasMat = stock.length || Object.keys(ext).length;
+      const stock = stockIn(l.id), ext = externalIn(l.id), hs = notesIn(l.id);
+      const hasMat = stock.length || Object.keys(ext).length || hs.length;
       if (!today.length && !tmw.length && !hasMat) continue;
       // le matériel peut rester si la même société occupe encore la salle demain
       const tomorrowAll = DATA.events.filter((e) => onDay(e, tomorrow) && e.room_ids.includes(l.id));
       const stays = hasMat && today.some((t) => tomorrowAll.some((n) => n.id === t.id || sameClient(n.client, t.client)));
-      const room = { name: l.name, stock, ext, hasMat, stays };
+      const room = { name: l.name, stock, ext, hs, hasMat, stays };
       // salles voisines au même programme (Coco 1 + 2 + 3 réunies) : une seule ligne, le matériel reste détaillé par salle
       const sig = JSON.stringify([today.map((e) => e.id), tmw.map((e) => e.id)]);
       const prev = rows[rows.length - 1];
@@ -246,7 +260,7 @@ function roomRows(areas, day) {
       // matériel regroupé : une offre sur « Coco » (salles réunies) n'est listée qu'une fois
       const groups = [];
       for (const x of r.rooms.filter((y) => y.hasMat)) {
-        const key = JSON.stringify([x.stock, x.ext, x.stays]);
+        const key = JSON.stringify([x.stock, x.ext, x.hs, x.stays]);
         const g = groups.find((y) => y.key === key);
         if (g) g.names.push(x.name); else groups.push({ key, names: [x.name], ...x });
       }
@@ -255,7 +269,8 @@ function roomRows(areas, day) {
           if (!x.stays) stats.mat++;
           const where = x.names.length < r.rooms.length ? ` <u>${esc(x.names.join(' + '))}</u>` : '';
           const extTxt = Object.entries(x.ext).map(([s, n]) => `matériel ${s} (${n} élément${n > 1 ? 's' : ''})`).join(', ');
-          return `<div class="task mat ${x.stays ? 'stays' : ''}"><span class="box"></span><div>${x.stays ? '<b>Peut rester</b> (même société demain)' : '<b>À démonter</b>'}${where} : ${esc([...x.stock, extTxt].filter(Boolean).join(', '))}</div></div>`;
+          const hsTxt = x.hs.length ? `<i>hors stock :</i> ${esc(x.hs.join(', '))}` : '';
+          return `<div class="task mat ${x.stays ? 'stays' : ''}"><span class="box"></span><div>${x.stays ? '<b>Peut rester</b> (même société demain)' : '<b>À démonter</b>'}${where} : ${[esc([...x.stock, extTxt].filter(Boolean).join(', ')), hsTxt].filter(Boolean).join(' · ')}</div></div>`;
         }).join('');
       const tmwHtml = r.tmw.length ? r.tmw.map((e) => taskHtml({ ...e, _day: tomorrow })).join('') : '<div class="none">—</div>';
       html += `<div class="rrow"><div class="rc"><div class="rname">${esc(r.rooms.map((x) => x.name).join(' + '))}</div>${free}</div>

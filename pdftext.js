@@ -83,7 +83,34 @@ function loadObjects(buf) {
     try { val = tokenize(body)(); } catch { val = null; }
     objs.set(num, { val, stream });
   }
+  unpackObjectStreams(objs);
   return objs;
+}
+
+// PDF ré-enregistrés (Acrobat, « PDF optimisé ») : beaucoup d'objets sont rangés dans des flux /ObjStm
+// (n° et position en tête du flux décompressé, puis les objets à la suite). Les objets déjà lus directement priment.
+function unpackObjectStreams(objs) {
+  for (const [, o] of [...objs]) {
+    const d = o.val;
+    if (!o.stream || !d || d.Type?.name !== 'ObjStm') continue;
+    const f = d.Filter;
+    const filters = Array.isArray(f) ? f.map((x) => x?.name) : f ? [f.name] : [];
+    if (filters.some((x) => x !== 'FlateDecode' && x !== 'Fl')) continue;
+    let data = o.stream;
+    try { if (filters.length) data = zlib.inflateSync(data); } catch { try { data = zlib.inflateSync(data, { finishFlush: zlib.constants.Z_SYNC_FLUSH }); } catch { continue; } }
+    const s = data.toString('latin1');
+    const n = Number(d.N), first = Number(d.First);
+    if (!(n > 0) || !(first >= 0)) continue;
+    const head = s.slice(0, first).trim().split(/\s+/).map(Number);
+    for (let k = 0; k < n; k++) {
+      const num = head[2 * k], off = head[2 * k + 1];
+      if (!Number.isFinite(num) || !Number.isFinite(off) || objs.has(num)) continue;
+      const end = k + 1 < n ? first + head[2 * k + 3] : s.length;
+      let val;
+      try { val = tokenize(s.slice(first + off, end))(); } catch { val = null; }
+      objs.set(num, { val, stream: null });
+    }
+  }
 }
 
 function makeDoc(buf) {

@@ -182,6 +182,13 @@
   .extin .pill { font-size:10px; }
   .extin .hit { background:var(--hit); font-weight:600; border-radius:4px; }
   .extin .dim { opacity:.5; }
+  /* matériel hors stock (notes) installé dans la salle */
+  .hsin { margin-top:8px; padding-top:4px; border-top:1px solid var(--line); font-size:13px; }
+  .hsin .lbl { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin:8px 0 3px; display:flex; align-items:center; gap:6px; }
+  .hsin > div + div { margin-top:2px; }
+  .hsin .hit { background:var(--hit); font-weight:600; border-radius:4px; }
+  .hsin .dim { opacity:.5; }
+  .eqin .part { font-size:11px; opacity:.8; }
 
   /* ---- Historique ---- */
   details.hist { background:var(--card); border:0; border-radius:12px; box-shadow:var(--shadow-sm), 0 0 0 1px var(--line); margin-bottom:8px; }
@@ -287,7 +294,17 @@
   table.pg thead th { position:sticky; top:0; z-index:3; background:var(--surface-2); color:var(--muted); padding:9px 8px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; text-align:center; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   table.pg th.day { position:sticky; left:0; z-index:2; background:var(--card); color:var(--ink); padding:8px 12px; width:86px; text-align:left; text-transform:capitalize; white-space:nowrap; font-size:12.5px; letter-spacing:0; font-weight:700; }
   table.pg thead th.day { z-index:4; background:var(--surface-2); }
-  table.pg tr.today th.day { box-shadow:inset 3px 0 0 var(--accent); color:var(--accent); }
+  /* aujourd'hui : rangée mise en avant (jour en couleur pleine, liseré, cases plus vives) */
+  table.pg tr.today th.day { background:var(--accent); color:var(--accent-ink); }
+  table.pg tr.today th.day::after { content:"aujourd'hui"; display:block; font-size:10px; font-weight:600; opacity:.9; }
+  table.pg tr.today > *, table.pg tr:has(+ tr.today) > * { border-bottom:2px solid var(--accent); }
+  table.pg tr.today > td:last-child { border-right:2px solid var(--accent); }
+  table.pg td.tdy { filter:saturate(1.7) brightness(1.03); }
+  table.pg td.empty.tdy { background:var(--today); filter:none; }
+  :root { --today:#fff3c4; }
+  :root[data-theme="dark"] { --today:#4a3912; }
+  :root[data-theme="dark"] table.pg td.tdy:not(.empty) { filter:saturate(1.3) brightness(1.4); }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --today:#4a3912; } :root:not([data-theme="light"]) table.pg td.tdy:not(.empty) { filter:saturate(1.3) brightness(1.4); } }
   table.pg td { height:54px; overflow:hidden; }
   table.pg td.empty { background:var(--card); }
   body.plwide main { max-width:none; }
@@ -352,6 +369,10 @@
   td.empty[data-new]:hover::after { content:'＋'; display:block; text-align:center; color:var(--muted); padding-top:14px; }
   .pc[data-edit] { cursor:pointer; }
   .pc[data-edit]:hover { background:color-mix(in srgb, var(--ink) 6%, transparent); }
+  /* toute la case est cliquable, même la partie agrandie par une case voisine plus remplie (→ dernier événement de la case) */
+  table.pg td[data-last] { cursor:pointer; position:relative; }
+  table.pg td[data-last]:hover:not(:has(.pc:hover, a.ofr:hover))::after { content:''; position:absolute; inset:0; background:color-mix(in srgb, var(--ink) 6%, transparent); pointer-events:none; }
+  .hsx { float:right; margin:0 0 0 4px; font-size:10.5px; cursor:help; }
 
   /* ---- Fenêtre « Prêt » (matériel) ---- */
   table.ph { font-size:13px; }
@@ -377,6 +398,20 @@
   .evrooms .fl:first-child { margin-top:0; }
   .evrooms label { display:inline-flex; flex-direction:row; align-items:center; gap:5px; margin:0 12px 3px 0; font-size:13px; font-weight:500; color:var(--ink); }
   .evrooms input { width:auto; margin:0; }
+  /* case du planning : fiches techniques et matériel hors stock */
+  .evsec { border:1px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13px; }
+  .evsec:empty { display:none; }
+  .evsec .h { font-weight:700; margin-bottom:4px; }
+  .evsec .it { display:flex; align-items:center; gap:6px; flex-wrap:wrap; padding:6px 0; border-top:1px solid var(--line); }
+  .evsec .it .grow { flex:1; min-width:200px; }
+  .evsec .it label.grow { font-size:12px; }
+  .evsec .it input, .evsec .it select { padding:5px 9px; font-size:13px; border-radius:8px; }
+  .evsec .it select { max-width:100%; flex:1; min-width:200px; }
+  .evsec .btn.small { padding:4px 9px; font-size:12.5px; }
+  .evsec a.ofr { vertical-align:1px; }
+  /* onglet Salles : salle réunie (même matériel pour plusieurs parties) */
+  .grid.rooms .merged { font-size:11px; font-weight:600; color:var(--muted); margin:-4px 0 4px; }
+  .hsin .lbl { color:var(--orange-ink); }
 
   /* ---- Imports (BEO Book, fiches techniques) ---- */
   table.pdft { border-collapse:collapse; width:100%; font-size:13px; }
@@ -731,11 +766,21 @@
       <label class="chk" style="margin-top:8px"><input type="checkbox" id="evUrgent"> ⚠ Important (affiché en rouge)</label>
       <div id="evDone" class="plwarn" style="display:none;margin-top:8px"></div></div>
     <div><div class="lbl">Salles <small class="muted" id="evRoomsHint"></small></div><div id="evRooms" class="evrooms"></div></div>
+    <div id="evOffers" class="evsec"></div>
+    <div id="evNotes" class="evsec"></div>
+    <input type="file" id="evOfFile" accept=".pdf,application/pdf" hidden>
     <p class="warn" id="evErr"></p>
   </div>
   <div class="row" style="margin-top:14px;justify-content:space-between">
     <button type="button" class="btn ghost" id="evDel" style="color:var(--err)">Supprimer</button>
     <span class="row"><button type="button" class="btn ghost" id="evCancel">Annuler</button><button type="button" class="btn" id="evSave">Enregistrer</button></span>
+  </div>
+</dialog>
+<dialog id="noteDlg">
+  <h2 id="noteTitle">Matériel hors stock</h2>
+  <div id="noteBody" class="evsec" style="width:min(520px,88vw)"></div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button type="button" class="btn ghost" id="noteClose">Fermer</button>
   </div>
 </dialog>
 <dialog id="retireDlg">
@@ -891,8 +936,8 @@ const lieuOpen = {}; // sections repliées/dépliées par l'utilisateur (hors re
 // Équipement fixe (inclus) d'une salle
 const equipOf = (l) => { try { return JSON.parse(l.equipment || '[]'); } catch { return []; } };
 
-// Matériel externe actuellement installé dans une salle : noté au montage d'une offre, retiré au démontage
-function externalIn(roomId) {
+// Matériel externe actuellement installé : noté au montage d'une offre, retiré au démontage (room_ids : salles de la fiche)
+function externalAll() {
   const last = new Map(); // dernière validation (montage ou démontage) par offre + salle de la fiche
   for (const m of PL.offerMoves || []) for (const x of m.external || []) last.set(`${x.offer_id}|${x.room_name}`, m);
   const out = [];
@@ -900,36 +945,71 @@ function externalIn(roomId) {
     if (m.phase !== 'Montage') continue;
     const [oid, rn] = [Number(k.split('|')[0]), k.slice(k.indexOf('|') + 1)];
     const client = PL.offers.find((o) => o.id === oid)?.client || '';
-    for (const x of m.external) if (x.offer_id === oid && x.room_name === rn && x.room_ids.includes(roomId)) out.push({ ...x, client });
+    for (const x of m.external) if (x.offer_id === oid && x.room_name === rn) out.push({ ...x, client });
   }
   return out;
+}
+const externalIn = (roomId) => externalAll().filter((x) => x.room_ids.includes(roomId));
+
+// Salles réunies : parties qui partagent du matériel installé ensemble (société externe ou hors stock noté pour
+// « Redwood 1 + 2 ») → une seule carte dans l'onglet Salles, le matériel n'est pas répété dans chaque partie
+function mergedRooms() {
+  let groups = [];
+  const sets = [...externalAll().map((x) => x.room_ids), ...(PL.notes || []).map((n) => n.room_ids)].filter((s) => s.length > 1);
+  for (const s of sets) {
+    const touch = groups.filter((g) => g.some((id) => s.includes(id)));
+    groups = groups.filter((g) => !touch.includes(g));
+    groups.push([...new Set([...s, ...touch.flat()])]);
+  }
+  const of = new Map();
+  for (const g of groups) for (const id of g) of.set(id, g);
+  return of; // salle → toutes les parties de sa salle réunie
 }
 
 function renderLieux() {
   const q = norm($('#lieuQ').value);
   const matches = (it) => !q || norm(it.name + ' ' + it.category).includes(q);
   let rooms = 0, pieces = 0;
+  const merged = mergedRooms(), done = new Set();
+  const ext0 = externalAll();
   const html = locGroups().filter((g) => g.label !== 'Stocks').map((g) => {
     const cards = g.locs.map((l) => {
-      const lines = D.stock.filter((s) => s.location_id === l.id)
-        .map((s) => ({ s, i: D.items.find((i) => i.id === s.item_id), hit: false }))
+      if (done.has(l.id)) return '';
+      // une carte = une salle, ou toutes les parties d'une salle réunie (dans l'ordre de la liste)
+      const ids = merged.has(l.id) ? D.locations.filter((x) => merged.get(l.id).includes(x.id)).sort((a, b) => a.name.localeCompare(b.name, 'fr', { numeric: true })).map((x) => x.id) : [l.id];
+      ids.forEach((id) => done.add(id));
+      const qty = new Map(); // matériel venu du stock, additionné sur les parties
+      for (const s of D.stock.filter((s) => ids.includes(s.location_id))) qty.set(s.item_id, (qty.get(s.item_id) || 0) + s.qty);
+      const lines = [...qty].map(([id, n]) => ({ s: { qty: n }, i: D.items.find((i) => i.id === id), hit: false }))
         .sort((a, b) => a.i.name.localeCompare(b.i.name));
       lines.forEach((x) => (x.hit = matches(x.i)));
-      const ext = externalIn(l.id).map((x) => ({ ...x, hit: !q || norm(x.name + ' ' + x.supplier).includes(q) }));
-      const eq = equipOf(l).map((x) => ({ ...x, hit: !q || norm(x.name).includes(q) }));
-      if (q && !lines.some((x) => x.hit) && !ext.some((x) => x.hit) && !eq.some((x) => x.hit)) return ''; // recherche : on ne garde que les emplacements concernés
-      if (q) { rooms++; pieces += lines.filter((x) => x.hit).reduce((a, x) => a + x.s.qty, 0) + ext.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0); }
-      // 1) équipement inclus (fixe) — séparé du matériel installé : 2) depuis le stock, 3) par une société externe
+      const seen = new Set();
+      const ext = ext0.filter((x) => x.room_ids.some((id) => ids.includes(id)))
+        .filter((x) => { const k = `${x.offer_id}|${x.room_name}|${x.name}|${x.supplier}`; return !seen.has(k) && seen.add(k); })
+        .map((x) => ({ ...x, hit: !q || norm(x.name + ' ' + x.supplier).includes(q) }));
+      const hs = notesIn(ids).map((n) => ({ ...n, hit: !q || norm(n.name).includes(q) }));
+      // équipement inclus : additionné sur les parties d'une salle réunie (3 parties × 1 projecteur → 3 × Projecteur)
+      const eqm = new Map();
+      for (const id of ids) for (const x of equipOf(D.locations.find((y) => y.id === id))) {
+        const k = norm(x.name); const cur = eqm.get(k);
+        if (cur) cur.qty += Number(x.qty) || 0; else eqm.set(k, { qty: Number(x.qty) || 0, name: x.name });
+      }
+      const eq = [...eqm.values()].map((x) => ({ ...x, hit: !q || norm(x.name).includes(q) }));
+      if (q && !lines.some((x) => x.hit) && !ext.some((x) => x.hit) && !eq.some((x) => x.hit) && !hs.some((x) => x.hit)) return ''; // recherche : on ne garde que les emplacements concernés
+      if (q) { rooms++; pieces += lines.filter((x) => x.hit).reduce((a, x) => a + x.s.qty, 0) + ext.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0) + hs.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0); }
+      // 1) équipement inclus (fixe) — séparé du matériel installé : 2) depuis le stock, 3) par une société externe, 4) hors stock
       const eqHtml = eq.length ? `<div class="eqin"><div class="lbl">Équipement de la salle (inclus)</div>${eq.map((x) =>
         `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}">${x.qty} × ${esc(x.name)}</div>`).join('')}</div>` : '';
       const extHtml = ext.length ? `<div class="extin"><div class="lbl">Installé par une société externe</div>${ext.map((x) =>
         `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}" title="${esc(x.client)}">${x.qty} × ${esc(x.name)} <span class="pill ext">${esc(x.supplier)}</span></div>`).join('')}</div>` : '';
-      const actions = ''; // actions (amener, vider, équipement) : clic sur la carte → petit menu
-      const full = lines.length || ext.length;
-      return `<div class="card ${full ? 'filled' : 'vide'} ${q ? 'found' : ''}" data-room="${l.id}" title="Clic : amener du matériel, vider la salle, modifier l'équipement"><h3>${esc(l.name)}</h3>${actions}` +
+      const hsHtml = hs.length ? `<div class="hsin"><div class="lbl">Hors stock</div>${hs.map((x) =>
+        `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}" title="${esc(`Ajouté le ${dayLabel(x.ts.slice(0, 10))}${x.client ? ' — ' + x.client : ''}`)}">${esc(noteTxt(x))}</div>`).join('')}</div>` : '';
+      const full = lines.length || ext.length || hs.length;
+      return `<div class="card ${full ? 'filled' : 'vide'} ${q ? 'found' : ''}" data-room="${ids[0]}" data-rooms="${ids.join(',')}" title="Clic : amener du matériel, vider la salle, matériel hors stock, équipement"><h3>${esc(ids.length > 1 ? roomsLabel(ids) : l.name)}</h3>` +
+        (ids.length > 1 ? `<div class="merged">Salle réunie : ${esc(ids.map(locName).join(' + '))}</div>` : '') +
         (lines.length
           ? `<div class="lbl stk">Installé depuis le stock</div><table><tbody>${lines.map(({ s, i, hit }) => `<tr class="${q ? (hit ? 'hit' : 'dim') : ''}"><td>${esc(i.name)}</td><td style="text-align:right"><b>${s.qty}</b></td></tr>`).join('')}</tbody></table>`
-          : '') + extHtml + eqHtml + '</div>';
+          : '') + extHtml + hsHtml + eqHtml + '</div>';
     }).filter(Boolean);
     if (q && !cards.length) return ''; // recherche : sections sans résultat masquées
     const open = q ? true : (lieuOpen[g.label] ?? true);
@@ -1004,13 +1084,17 @@ document.body.appendChild(roomMenu);
 $('#lieuxGrid').addEventListener('click', (e) => {
   const card = e.target.closest('[data-room]'); if (!card) return;
   const id = Number(card.dataset.room);
+  const ids = (card.dataset.rooms || String(id)).split(',').map(Number);
   if (!roomMenu.hidden && Number(roomMenu.dataset.room) === id) { roomMenu.hidden = true; return; }
-  const full = D.stock.some((s) => s.location_id === id);
-  roomMenu.dataset.room = id;
-  roomMenu.innerHTML = `<div class="rmh">${esc(locName(id))}</div>
-    <button type="button" data-act="fill">＋ Amener du matériel du stock</button>
-    ${full ? '<button type="button" data-act="empty">← Vider la salle vers le stock</button>' : ''}
-    <button type="button" data-act="equip">✎ Modifier l'équipement inclus</button>`;
+  const full = (x) => D.stock.some((s) => s.location_id === x);
+  const one = ids.length === 1;
+  roomMenu.dataset.room = id; roomMenu.dataset.rooms = ids.join(',');
+  // salle réunie : vider / équipement par partie ; le matériel hors stock vaut pour la salle réunie
+  roomMenu.innerHTML = `<div class="rmh">${esc(one ? locName(id) : roomsLabel(ids) + ' (salle réunie)')}</div>
+    <button type="button" data-act="fill" data-id="${id}">＋ Amener du matériel du stock${one ? '' : ` (→ ${esc(locName(id))})`}</button>
+    ${ids.filter(full).map((x) => `<button type="button" data-act="empty" data-id="${x}">← Vider ${one ? 'la salle' : esc(locName(x))} vers le stock</button>`).join('')}
+    <button type="button" data-act="notes">🧰 Matériel hors stock…</button>
+    ${ids.map((x) => `<button type="button" data-act="equip" data-id="${x}">✎ ${one ? 'Modifier l\'équipement inclus' : 'Équipement inclus — ' + esc(locName(x))}</button>`).join('')}`;
   roomMenu.hidden = false;
   const r = card.getBoundingClientRect(), mw = 250;
   roomMenu.style.left = `${Math.min(window.scrollX + r.left + 10, window.scrollX + document.documentElement.clientWidth - mw - 10)}px`;
@@ -1019,9 +1103,10 @@ $('#lieuxGrid').addEventListener('click', (e) => {
 });
 roomMenu.addEventListener('click', (e) => {
   const b = e.target.closest('[data-act]'); if (!b) return;
-  const id = Number(roomMenu.dataset.room); roomMenu.hidden = true;
+  const id = Number(b.dataset.id || roomMenu.dataset.room); roomMenu.hidden = true;
   if (b.dataset.act === 'fill') roomFill(id);
   else if (b.dataset.act === 'empty') roomEmpty(id);
+  else if (b.dataset.act === 'notes') openNotes(roomMenu.dataset.rooms.split(',').map(Number));
   else openLocEdit(id);
 });
 document.addEventListener('click', (e) => { if (!roomMenu.hidden && !roomMenu.contains(e.target)) roomMenu.hidden = true; });
@@ -1192,7 +1277,7 @@ function renderChecks() {
   $('#ckIgnored').innerHTML = d.dismissed.map((x) => ckRow(x, true)).join('');
   ckCountUpdate(d);
 }
-const KIND_FR = { beo: '📄 BEO', offre: '📎 Fiche technique', 'offre-suppr': '🗑 Fiche supprimée' };
+const KIND_FR = { beo: '📄 BEO', offre: '📎 Fiche technique', 'offre-suppr': '🗑 Fiche supprimée', 'offre-modif': '✎ Fiche modifiée' };
 function jrSummary(x) {
   const c = x.counts, parts = [];
   if (c.added) parts.push(`<i>+${c.added}</i> ajoutée${c.added > 1 ? 's' : ''}`);
@@ -1291,7 +1376,7 @@ $('#undoGo').onclick = async () => {
   try {
     const r = await api('/api/imports/undo', { id: UNDO.id, force: UNDO.force });
     if (!r.done) { $('#undoErr').textContent = 'L\'import n\'a pas été annulé : la situation a changé, réessaie.'; return; }
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     $('#undoDlg').close();
     toast(r.errors?.length ? `Import annulé, mais : ${r.errors.join(' ; ')}` : 'Import annulé ✔ : tout est revenu comme avant', !!r.errors?.length);
     await loadControle();
@@ -1546,7 +1631,11 @@ $('#retGo').onclick = async () => {
 
 // ---- Onglet "Planning BEO" : planning géré directement dans l'application ----
 let _v = 'grid', _dn = 'compact'; try { _v = localStorage.getItem('plView') || 'grid'; _dn = localStorage.getItem('plDensity') || 'compact'; } catch {}
-const PL = { events: [], offers: [], offerMoves: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+const PL = { events: [], offers: [], offerMoves: [], notes: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+// réponse du serveur (planningData) → état du planning
+function setPL(r) {
+  PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.notes = r.notes || []; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+}
 const PL_COLOR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
 const AREA_ORDER = ['Oasis (étage -1)', 'Rez-de-chaussée', 'Étage +1', 'Autres espaces'];
@@ -1565,6 +1654,18 @@ const dayLabel = (iso, long) => {
   return `${w} ${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}`;
 };
 const roomStuff = (id) => D.stock.filter((s) => s.location_id === id).map((s) => `${D.items.find((i) => i.id === s.item_id)?.name || '?'} ×${s.qty}`);
+// matériel hors stock (notes) installé dans ces salles ; une note sur une salle réunie compte une seule fois
+const notesIn = (ids) => (PL.notes || []).filter((n) => n.room_ids.some((id) => ids.includes(id)));
+// sur une case du planning : seulement si l'événement se termine après l'installation (pas sur les semaines passées)
+const notesOn = (e) => notesIn(e.room_ids).filter((n) => n.event_id === e.id || n.ts.slice(0, 10) <= e.end_date);
+const noteTxt = (n) => `${n.qty} × ${n.name}`;
+// « Redwood 1 + 2 + 3 » (parties d'une même salle), sinon « Teck + Ginko »
+function roomsLabel(ids) {
+  const names = ids.map(locName);
+  const parts = names.map((n) => /^(.*?)\s*(\d+)$/.exec(n));
+  if (names.length > 1 && parts.every((p) => p && p[1] === parts[0][1])) return `${parts[0][1]} ${parts.map((p) => Number(p[2])).sort((a, b) => a - b).join(' + ')}`;
+  return names.join(' + ');
+}
 // « Démontage » contient « montage » : on le teste en premier (orange, comme dans l'historique)
 const tagClass = (t) => (/démont|récup/i.test(t) ? 'demontage' : /montage/i.test(t) ? 'setup' : /show|répét/i.test(t) ? 'show' : '');
 
@@ -1572,7 +1673,7 @@ async function loadPlanning(quiet) {
   try {
     const before = PL.status.version;
     const r = await api('/api/planning');
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status; PL.loaded = true;
+    setPL(r); PL.loaded = true;
     renderPlanning();
     renderLieux(); // matériel externe installé (onglet Salles)
     if (quiet && before !== undefined && r.status.version > before) toast('Planning mis à jour par un autre poste ✔');
@@ -1590,18 +1691,23 @@ function planningSourceHtml() {
     }
   }
   const when = bk ? new Date(bk.imported_at).toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  // compteur du bouton « Offres » : celles de la semaine affichée (pas tout l'historique)
+  const nWeek = PL.week ? offersOnDays(weekDays(PL.week)).length : 0;
+  const ofTip = `Fiches techniques (offres) : importer, ouvrir, supprimer\n${nWeek} offre${nWeek > 1 ? 's' : ''} cette semaine · ${PL.offers.length} enregistrée${PL.offers.length > 1 ? 's' : ''} au total`;
   const info = bk ? `BEO Book de la semaine : ${bk.original} (importé le ${when})` : 'Aucun BEO Book archivé pour cette semaine';
   // textes courts, jamais coupés (détail au survol) ; sur petit écran, les boutons passent sur toute la largeur
   return `<span class="plsrc-info muted" title="${esc(info)}">${bk ? `BEO Book : <b>${esc(bk.original)}</b> <span class="plsrc-when">· ${esc(when)}</span>` : esc(info)}</span>
     <span class="plsrc-btns">
       ${bk ? `<a class="btn ghost" href="${apercuUrl(`/api/beo/w/${bkKey}/pdf`, bk.original.replace(/\.pdf$/i, ''))}" target="_blank" rel="noopener" title="Voir et imprimer le BEO Book de la semaine">📄 Voir le BEO Book</a>` : ''}
       <button class="btn" id="plPdf" title="Importer un BEO Book complet, ou un ou plusieurs BEO (PDF)">⬆ Importer un BEO</button>
-      <button class="btn teal" id="plOffer" title="Fiches techniques (offres) : importer, ouvrir, supprimer">📎 Offres${PL.offers.length ? ` <span class="btn-count">${PL.offers.length}</span>` : ''}</button>
+      <button class="btn teal" id="plOffer" title="${esc(ofTip)}">📎 Offres${nWeek ? ` <span class="btn-count">${nWeek}</span>` : ''}</button>
     </span>`;
 }
 
 function evCard(e) {
   const stuff = e.room_ids.flatMap((id) => { const l = roomStuff(id); return l.length ? [`${locName(id)} : ${l.join(', ')}`] : []; });
+  const hs = notesOn(e);
+  if (hs.length) stuff.push(`hors stock : ${hs.map(noteTxt).join(', ')}`);
   const inst = e.room_ids.length
     ? (stuff.length ? `Dans la salle : ${stuff.map(esc).join(' — ')}` : '<i>Aucun matériel enregistré dans la salle</i>')
     : '<i>Aucune salle reconnue : clique pour choisir la salle</i>';
@@ -1668,10 +1774,13 @@ function avHtml(e) {
 function gridCell(e, hit, extra = '') {
   const stuff = e.room_ids.flatMap((id) => roomStuff(id));
   const xtra = avExtra(e);
-  const tip = [e.client, e.detail, ...beoInfoLines(e), xtra.length ? 'Infos AV du BEO :\n   ' + xtra.join('\n   ') : '', stuff.length ? 'Dans la salle : ' + stuff.join(', ') : ''].filter(Boolean).join('\n');
+  const hs = notesOn(e).map(noteTxt);
+  const tip = [e.client, e.detail, ...beoInfoLines(e), xtra.length ? 'Infos AV du BEO :\n   ' + xtra.join('\n   ') : '', stuff.length ? 'Dans la salle : ' + stuff.join(', ') : '',
+    hs.length ? 'Hors stock dans la salle : ' + hs.join(', ') : ''].filter(Boolean).join('\n');
   const time = e.start ? `<div class="t">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</div>` : '';
   const tags = e.tags.map((t) => tagChip(t, e)).join(' ');
-  const mark = xtra.length ? `<span class="avx" title="${esc('Infos AV en plus dans le BEO :\n' + xtra.join('\n'))}">ⓘ</span>` : '';
+  const mark = (xtra.length ? `<span class="avx" title="${esc('Infos AV en plus dans le BEO :\n' + xtra.join('\n'))}">ⓘ</span>` : '')
+    + (hs.length ? `<span class="hsx" title="${esc('Matériel hors stock installé :\n' + hs.join('\n'))}">🧰</span>` : '');
   return `<div class="pc ${e.color || ''} ${isSplit(e) ? 'split' : ''} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${mark}${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
 }
 
@@ -1684,7 +1793,7 @@ function offerParts(items) {
 function offerTip(o, r) {
   const p = offerParts(r.items || []);
   return [
-    `Offre — ${o.client}${o.title || o.version ? ` (${[o.title, o.version].filter(Boolean).join(' ')})` : ''}`,
+    `Offre — ${o.label ? `« ${o.label} » · ` : ''}${o.client}${o.title || o.version ? ` (${[o.title, o.version].filter(Boolean).join(' ')})` : ''}`,
     `Salle : ${r.name ? r.name + ' → ' : ''}${r.room_ids.map(locName).join(', ')}`,
     `Montage : ${dayLabel(r.setup)}${r.show_from ? ` · Show : ${r.show_raw || dayLabel(r.show_from)}` : ''}${r.demontage ? ` · Démontage : ${dayLabel(r.demontage)}` : ''}`,
     p.dolce.length ? 'À monter par nous (Dolce) :\n' + p.dolce.map((i) => `   ${i.qty} × ${i.name}`).join('\n') : '',
@@ -1693,8 +1802,11 @@ function offerTip(o, r) {
     'Clique pour ouvrir le PDF',
   ].filter(Boolean).join('\n');
 }
+// nom affiché sur l'étiquette : choisi par l'utilisateur (« Day 1 », « AV4 »…), sinon « Offre »
 const offerChip = (o, r) =>
-  `<a class="ofr" href="${apercuUrl(`/api/offers/${o.id}/pdf`, `Fiche technique - ${o.client}${o.version ? ' ' + o.version : ''}`, r.page || 1)}" target="_blank" rel="noopener" title="${esc(offerTip(o, r))}">📄 Offre</a>`;
+  `<a class="ofr" href="${apercuUrl(`/api/offers/${o.id}/pdf`, `Fiche technique - ${o.client}${o.version ? ' ' + o.version : ''}`, r.page || 1)}" target="_blank" rel="noopener" title="${esc(offerTip(o, r))}">📄 ${esc(o.label || 'Offre')}</a>`;
+// offres qui ont un montage, un show ou un démontage dans ces jours-là (semaine affichée)
+const offersOnDays = (days) => PL.offers.filter((o) => o.rooms.some((r) => !r.skip && Object.keys(offerPhases(r)).some((d) => days.includes(d))));
 // tous les PDF de l'application s'ouvrent dans l'aperçu avant impression (apercu.html)
 function apercuUrl(src, title, page = 1) {
   return `/apercu.html?src=${encodeURIComponent(src)}&title=${encodeURIComponent(title || 'Document')}&page=${page}`;
@@ -1777,6 +1889,7 @@ function renderGrid(days, weekEvs, hit, today) {
     return out;
   };
   const chipHtml = (list) => list.length ? `<div class="ofrs">${list.map((x) => offerChip(x.o, x.r)).join('')}</div>` : '';
+  const ti = days.indexOf(today); // rangée d'aujourd'hui (mise en avant)
   const rows = days.map((d, r) => {
     const tds = [];
     for (let c = 0; c < C; c++) {
@@ -1784,17 +1897,18 @@ function renderGrid(days, weekEvs, hit, today) {
       if (v === 'x') continue;
       if (!v) {
         const ch = chipsFor(r, 1, c, 1).map((x) => offerChip(x.o, x.r)).join('');
-        tds.push(`<td class="empty${ch ? ' hasofr' : ''}" data-new="1" data-d="${d}" data-r="${cols[c].id}">${ch}</td>`); continue;
+        tds.push(`<td class="empty${ch ? ' hasofr' : ''}${r === ti ? ' tdy' : ''}" data-new="1" data-d="${d}" data-r="${cols[c].id}">${ch}</td>`); continue;
       }
       // l'étiquette « Offre » va dans l'événement de la même société (sinon dans le dernier de la case)
       const list = v.list.slice().sort((a, b) => tkey(a).localeCompare(tkey(b)));
       const ch = chipsFor(r, v.rs, c, v.cs);
       const per = list.map((e) => ch.filter((it) => !it.done && sameClient(e.client, it.o.client) && (it.done = true)));
       ch.filter((it) => !it.done).forEach((it) => per[per.length - 1].push(it));
-      // la case prend la couleur de son (dernier) événement : pleine même quand la ligne s'agrandit
+      // la case prend la couleur de son (dernier) événement : pleine même quand la ligne s'agrandit ;
+      // un clic dans la partie agrandie (sous les événements) ouvre ce dernier événement
       const last = list[list.length - 1];
-      const fill = hit(last) ? ` class="fill fill-${isSplit(last) ? 'split' : last.color || 'none'}"` : '';
-      tds.push(`<td rowspan="${v.rs}" colspan="${v.cs}"${fill}>${list.map((e, i) => gridCell(e, hit, chipHtml(per[i]))).join('')}</td>`);
+      const cls = [hit(last) ? `fill fill-${isSplit(last) ? 'split' : last.color || 'none'}` : '', r <= ti && ti < r + v.rs ? 'tdy' : ''].filter(Boolean).join(' ');
+      tds.push(`<td rowspan="${v.rs}" colspan="${v.cs}"${cls ? ` class="${cls}"` : ''} data-last="${last.id}">${list.map((e, i) => gridCell(e, hit, chipHtml(per[i]))).join('')}</td>`);
     }
     return `<tr class="${d === today ? 'today' : ''}"><th class="day">${dayLabel(d)}</th>${tds.join('')}</tr>`;
   }).join('');
@@ -1808,9 +1922,9 @@ function renderGrid(days, weekEvs, hit, today) {
 function renderPlanning() {
   // le planning a changé (import, modification, autre poste) : le compteur « Contrôle » est recalculé
   if (PL.status?.version !== CK.version) { CK.version = PL.status?.version; refreshChecks(); }
-  $('#plSource').innerHTML = planningSourceHtml();
   const today = isoToday();
   if (!PL.week) PL.week = weekStart(today);
+  $('#plSource').innerHTML = planningSourceHtml();
   const days = weekDays(PL.week);
   $('#plWeekLbl').textContent = `${dayLabel(days[0])} → ${dayLabel(days[9])}`;
   $('#plWeekInfo').textContent = `Semaine du ${dayLabel(days[0])} au ${dayLabel(days[9])}`;
@@ -1919,6 +2033,10 @@ function openEvent(ev, pre) {
     <button type="button" class="btn ghost small" id="evUndo" style="margin-left:8px">↩ Annuler une validation…</button>` : '';
   $('#evDel').style.display = ev ? '' : 'none'; $('#evDel').textContent = 'Supprimer';
   $('#evErr').textContent = '';
+  // fiches techniques de la case et matériel hors stock de la salle
+  EVO.edit = null; EVO.confirm = null;
+  $('#evNotes').innerHTML = '';
+  renderEvOffers(); renderNotes($('#evNotes'), [...sel]);
   $('#evDlg').showModal();
   if (!ev) $('#evClient').focus();
 }
@@ -1952,9 +2070,11 @@ window.addEventListener('scroll', closeEvMenu, true);
 
 $('#plBody').addEventListener('click', (e) => {
   if (e.target.closest('a.ofr')) return; // ouvre le PDF de l'offre (lien)
-  const c = e.target.closest('[data-edit]');
+  // un événement, ou la partie vide d'une case agrandie (→ dernier événement de la case)
+  const c = e.target.closest('[data-edit]') || e.target.closest('td[data-last]');
   if (c) {
-    const ev = PL.events.find((x) => x.id === Number(c.dataset.edit));
+    const ev = PL.events.find((x) => x.id === Number(c.dataset.edit || c.dataset.last));
+    if (!ev) return;
     return beoArchived(ev) ? openEvMenu(ev, e.clientX + 4, e.clientY + 4) : openEvent(ev);
   }
   const n = e.target.closest('[data-new]');
@@ -1985,7 +2105,7 @@ $('#evSave').onclick = async () => {
   }
   try {
     const r = await api('/api/planning/event', body);
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     $('#evDlg').close(); renderPlanning(); toast('Planning enregistré ✔');
   } catch (err) { $('#evErr').textContent = err.message; }
 };
@@ -1993,10 +2113,136 @@ $('#evDel').onclick = async () => {
   if (!EV.confirmDel) { EV.confirmDel = true; $('#evDel').textContent = 'Confirmer la suppression'; return; }
   try {
     const r = await api('/api/planning/event/delete', { id: EV.id });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     $('#evDlg').close(); renderPlanning(); toast('Événement supprimé');
   } catch (err) { $('#evErr').textContent = err.message; }
 };
+
+// ----- Matériel hors stock (notes) : « 3 multi », « 2 boîtiers HD-SDI/HDMI »… installé dans la salle dès l'ajout,
+// sans catalogue ni étape « montage » ; à démonter (fiche du jour) puis « ✓ Démonté ». Même bloc dans la case et dans l'onglet Salles.
+function renderNotes(box, ids, ctx = {}) {
+  box._ctx = { ...ctx, ids };
+  const list = notesIn(ids);
+  const keep = box.querySelector('[data-notetxt]')?.value || ''; // texte en cours de saisie gardé
+  box.innerHTML = `<div class="h">🧰 Matériel hors stock dans la salle ${list.length ? `<span class="muted" style="font-weight:400">(${list.length})</span>` : ''}</div>` +
+    (!ids.length ? '<p class="muted" style="margin:0">Choisis d\'abord la salle.</p>'
+      : list.map((n) => `<div class="it"><span class="grow"><b>${esc(noteTxt(n))}</b> <span class="muted">· ${esc(roomsLabel(n.room_ids))} · depuis le ${esc(dayLabel(n.ts.slice(0, 10)))}${n.client ? ' · ' + esc(n.client) : ''}</span></span>
+          <button type="button" class="btn ghost small" data-noterm="${n.id}" title="Retiré de la salle">✓ Démonté</button></div>`).join('')
+        + `<div class="it"><input data-notetxt value="${esc(keep)}" placeholder="ex : 3 multi  ·  2 boîtiers HD-SDI/HDMI" style="flex:1;min-width:200px">
+          <button type="button" class="btn small" data-noteadd>＋ Ajouter</button></div>
+          <p class="muted" style="font-size:12px;margin:2px 0 0">Compté comme installé dans ${esc(roomsLabel(ids))} dès l'ajout (pas de stock, pas d'étape « montage ») · apparaît à démonter dans la fiche du jour.</p>`);
+}
+async function addNote(box) {
+  const inp = box.querySelector('[data-notetxt]'); const text = inp?.value.trim();
+  if (!text) return inp?.focus();
+  try {
+    // depuis une case : rattaché à l'événement (société affichée à côté du matériel)
+    const fromEv = box.id === 'evNotes';
+    setPL(await api('/api/notes/add', { room_ids: box._ctx.ids, text, event_id: fromEv ? EV.id : null, client: fromEv ? $('#evClient').value.trim() : '' }));
+    inp.value = ''; afterNotes(box); toast('Ajouté dans la salle ✔'); box.querySelector('[data-notetxt]')?.focus();
+  } catch (err) { toast(err.message, true); }
+}
+function afterNotes(box) { renderNotes(box, box._ctx.ids, box._ctx); renderPlanning(); renderLieux(); }
+for (const box of [$('#evNotes'), $('#noteBody')]) {
+  box.addEventListener('click', async (e) => {
+    const rm = e.target.closest('[data-noterm]');
+    if (rm) {
+      try { setPL(await api('/api/notes/remove', { id: Number(rm.dataset.noterm) })); afterNotes(box); toast('Noté comme démonté ✔'); } catch (err) { toast(err.message, true); }
+      return;
+    }
+    if (e.target.closest('[data-noteadd]')) addNote(box);
+  });
+  box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('[data-notetxt]')) { e.preventDefault(); addNote(box); } });
+}
+// depuis l'onglet Salles (salle seule ou salle réunie)
+function openNotes(ids) {
+  $('#noteTitle').textContent = `Matériel hors stock — ${roomsLabel(ids)}`;
+  $('#noteBody').innerHTML = '';
+  renderNotes($('#noteBody'), ids);
+  $('#noteDlg').showModal();
+  $('#noteBody [data-notetxt]')?.focus();
+}
+$('#noteClose').onclick = () => $('#noteDlg').close();
+
+// ----- Fiches techniques de la case (fenêtre de l'événement) : renommer l'étiquette, retirer de la case, supprimer,
+// importer une fiche pour cette case, ou y associer une fiche déjà enregistrée
+const EVO = { edit: null, confirm: null };
+const evRoomsChecked = () => [...document.querySelectorAll('#evRooms input:checked')].map((c) => Number(c.value));
+const evSpan = () => { const a = $('#evDate').value, b = $('#evEndDate').value; return [a, b && b > a ? b : a]; };
+// parties de fiche affichées dans la case : salle en commun et un jour de montage / show / démontage dans la période
+const cellOffers = (ids, from, to) => PL.offers.flatMap((o) => o.rooms.map((r, index) => ({ o, r, index })))
+  .filter(({ r }) => !r.skip && r.room_ids.some((id) => ids.includes(id)) && Object.keys(offerPhases(r)).some((d) => from <= d && d <= to));
+const phaseTxt = (r) => Object.entries(offerPhases(r)).map(([d, ts]) => `${ts.join(' + ').toLowerCase()} ${dayLabel(d)}`).join(' · ');
+function renderEvOffers() {
+  const ids = evRoomsChecked(), [from, to] = evSpan();
+  const list = ids.length && from ? cellOffers(ids, from, to) : [];
+  let h = `<div class="h">📎 Fiches techniques de la case ${list.length ? `<span class="muted" style="font-weight:400">(${list.length})</span>` : ''}</div>`;
+  for (const { o, r, index } of list) {
+    if (EVO.edit === o.id) {
+      h += `<div class="it"><label class="grow">Nom sur l'étiquette<input id="evoLabel" value="${esc(o.label)}" placeholder="Offre" maxlength="40"></label>
+        <label class="grow">Société<input id="evoClient" value="${esc(o.client)}"></label>
+        <button type="button" class="btn small" data-evo="save" data-o="${o.id}">Enregistrer</button><button type="button" class="btn ghost small" data-evo="cancel">Annuler</button></div>`;
+      continue;
+    }
+    const k = `${o.id}|${index}`;
+    h += `<div class="it"><span class="grow">${offerChip(o, r)} <b>${esc(o.client)}</b> <span class="muted">${o.version ? esc(o.version) + ' · ' : ''}${esc(roomsLabel(r.room_ids))} · ${esc(phaseTxt(r))}</span></span>
+      <button type="button" class="btn ghost small" data-evo="rename" data-o="${o.id}" title="Nom affiché sur l'étiquette de la case, société">✎ Renommer</button>
+      <button type="button" class="btn ghost small" data-evo="unlink" data-o="${o.id}" data-x="${index}" title="La fiche reste dans la liste des offres (hors grille), sans étiquette ici">${EVO.confirm === 'unlink|' + k ? 'Confirmer le retrait' : 'Retirer de la case'}</button>
+      <button type="button" class="btn ghost small" data-evo="delete" data-o="${o.id}" style="color:var(--err)">${EVO.confirm === 'delete|' + o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`;
+  }
+  // ajouter : nouvelle fiche (PDF) pour cette case, ou fiche déjà enregistrée (d'abord celles de la semaine affichée)
+  const shown = new Set(list.map((x) => `${x.o.id}|${x.index}`));
+  const wk = new Set(offersOnDays(weekDays(PL.week || weekStart(isoToday()))).map((o) => o.id));
+  const others = PL.offers.flatMap((o) => o.rooms.map((r, index) => ({ o, r, index }))).filter((x) => !shown.has(`${x.o.id}|${x.index}`))
+    .sort((a, b) => (wk.has(b.o.id) - wk.has(a.o.id)) || (a.r.setup || '').localeCompare(b.r.setup || ''));
+  const optTxt = ({ o, r }) => `${o.client}${o.label ? ` « ${o.label} »` : ''}${o.version ? ' ' + o.version : ''} — ${r.name || 'salle ?'} → ${r.skip || !r.room_ids.length ? 'hors grille' : roomsLabel(r.room_ids)} (montage ${r.setup ? dayLabel(r.setup) : '?'})`;
+  h += `<div class="it"><button type="button" class="btn ghost small" data-evo="import" ${ids.length ? '' : 'disabled'}>＋ Importer une fiche (PDF)…</button>
+    ${others.length && ids.length ? `<select id="evoAssoc"><option value="">Associer une fiche déjà enregistrée…</option>${others.map((x) => `<option value="${x.o.id}|${x.index}">${esc(optTxt(x))}</option>`).join('')}</select>
+      <button type="button" class="btn ghost small" data-evo="assoc" disabled>Associer</button>` : ''}</div>`;
+  if (!ids.length) h += '<p class="muted" style="margin:2px 0 0">Choisis d\'abord la salle.</p>';
+  $('#evOffers').innerHTML = h;
+}
+async function evoApi(path, body, msg) {
+  $('#evErr').textContent = '';
+  try { setPL(await api(path, body)); EVO.edit = null; EVO.confirm = null; renderEvOffers(); renderPlanning(); toast(msg); }
+  catch (err) { $('#evErr').textContent = err.message; }
+}
+$('#evOffers').addEventListener('change', (e) => { if (e.target.id === 'evoAssoc') $('#evOffers [data-evo="assoc"]').disabled = !e.target.value; });
+$('#evOffers').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-evo]'); if (!b) return;
+  const act = b.dataset.evo, id = Number(b.dataset.o), o = PL.offers.find((x) => x.id === id);
+  const ids = evRoomsChecked();
+  if (act === 'rename') { EVO.edit = id; EVO.confirm = null; renderEvOffers(); $('#evoLabel')?.focus(); }
+  else if (act === 'cancel') { EVO.edit = null; renderEvOffers(); }
+  else if (act === 'save') evoApi('/api/offers/update', { id, label: $('#evoLabel').value, client: $('#evoClient').value }, 'Fiche renommée ✔');
+  else if (act === 'unlink') {
+    const k = `unlink|${id}|${b.dataset.x}`;
+    if (EVO.confirm !== k) { EVO.confirm = k; return renderEvOffers(); }
+    const r = o.rooms[Number(b.dataset.x)];
+    evoApi('/api/offers/update', { id, rooms: [{ index: Number(b.dataset.x), room_ids: r.room_ids.filter((x) => !ids.includes(x)) }] }, 'Fiche retirée de la case (toujours dans la liste des offres) · annulable dans Contrôle → Journal');
+  } else if (act === 'delete') {
+    if (EVO.confirm !== `delete|${id}`) { EVO.confirm = `delete|${id}`; return renderEvOffers(); }
+    evoApi('/api/offers/delete', { id }, 'Offre supprimée · annulable dans Contrôle → Journal');
+  } else if (act === 'assoc') {
+    const [oid, x] = ($('#evoAssoc').value || '').split('|').map(Number); if (!oid) return;
+    const r = PL.offers.find((y) => y.id === oid)?.rooms[x]; if (!r) return;
+    const [from, to] = evSpan();
+    const visible = Object.keys(offerPhases(r)).some((d) => from <= d && d <= to);
+    evoApi('/api/offers/update', { id: oid, rooms: [{ index: x, room_ids: ids }] },
+      visible ? 'Fiche associée à cette case ✔' : `Fiche associée à ${roomsLabel(ids)} — son étiquette apparaît le ${dayLabel(r.setup || r.show_from)} (jour du montage)`);
+  } else if (act === 'import') $('#evOfFile').click();
+});
+// importer une fiche depuis la case : la salle et le jour de la case sont proposés si la fiche ne les donne pas
+$('#evOfFile').addEventListener('change', async () => {
+  const f = $('#evOfFile').files[0]; if (!f) return;
+  OF.cell = { room_ids: evRoomsChecked(), date: $('#evDate').value, client: $('#evClient').value.trim() };
+  $('#evOfFile').value = '';
+  $('#evDlg').close();
+  OF.confirmDel = null; $('#ofFile').value = ''; $('#ofErr').textContent = ''; $('#ofDlg').showModal();
+  await ofLoadFile(f);
+});
+$('#evRooms').addEventListener('change', () => { renderEvOffers(); renderNotes($('#evNotes'), evRoomsChecked()); });
+['evDate', 'evEndDate'].forEach((id) => $('#' + id).addEventListener('change', renderEvOffers));
 
 
 // ----- « Prêt » sur une case avec offre : 2e étape = résumé et déplacement du matériel Dolce
@@ -2188,7 +2434,7 @@ async function submitUndo(move) {
   const lines = move ? PH.rows.filter((r) => r.on && r.qty > 0).map((r) => ({ item_id: r.item, qty: Math.min(r.qty, r.max), from: r.from, to: r.to })) : [];
   try {
     const r = await api('/api/planning/phase/undo', { event: PH.body, phase: PH.phase, lines });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     await load();
     $('#phDlg').close(); renderPlanning();
     toast(`${PH.phase} annulé ✔${r.moved ? ` — ${r.moved} pièce${r.moved > 1 ? 's' : ''} remise${r.moved > 1 ? 's' : ''} en place` : ''}`);
@@ -2230,7 +2476,7 @@ async function submitPhase(move) {
   try {
     const external = PH.ext.filter((x) => x.on).map(({ qty, name, supplier, offer_id, room_name, room_ids }) => ({ qty, name, supplier, offer_id, room_name, room_ids }));
     const r = await api('/api/planning/phase', { event: PH.body, phase: PH.phase, lines, external });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     await load(); // stock mis à jour (inventaire, salles)
     $('#phDlg').close(); renderPlanning();
     const left = PHASES.filter((p) => PH.todo.includes(p) && p !== PH.phase);
@@ -2390,11 +2636,11 @@ $('#pdfBody').addEventListener('click', async (e) => {
 $('#pdfGo').onclick = async () => {
   const d = PDFI.data; if (!d) return;
   $('#pdfErr').textContent = '';
-  const events = d.events.filter((e) => PDFI.sel.has(e.i)).map((e) => ({ date: e.date, room_id: e.room_id, start: e.start, end: e.end, client: e.client, detail: e.detail, color: e.color, info: e.info, moved_from: e.moved_from, replace_id: e.state === 'differs' || e.state === 'info' ? e.existing_id : null, info_only: e.state === 'info' }));
+  const events = d.events.filter((e) => PDFI.sel.has(e.i)).map((e) => ({ date: e.date, room_ids: e.room_ids, start: e.start, end: e.end, client: e.client, detail: e.detail, color: e.color, info: e.info, absorb: e.absorb, replace_id: e.state === 'differs' || e.state === 'info' ? e.existing_id : null, info_only: e.state === 'info' }));
   try {
     const r = await api('/api/planning/pdf/import', { events, remove_ids: [...PDFI.rm], token: d.token, filename: d.filename, from: d.from, to: d.to,
       kind: PDFI.kind, beos: d.beoList.map((b) => String(b.number)) });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     const td = isoToday();
     if (d.from) PL.week = weekStart(d.from <= td && td <= d.to ? td : d.from);
     renderPlanning();
@@ -2405,7 +2651,7 @@ $('#pdfGo').onclick = async () => {
 };
 
 // ----- Fiches techniques (offres) : lecture du PDF, vérification, enregistrement
-const OF = { data: null, picked: new Set(), confirmDel: null };
+const OF = { data: null, picked: new Set(), confirmDel: null, cell: null }; // cell : case du planning d'où la fiche est importée
 const kindPill = (i) => i.kind === 'dolce' ? '<span class="pill dolce">Dolce</span>' : i.kind === 'inclus' ? '<span class="pill inc">Inclus</span>'
   : i.kind === 'prix' ? `<span class="pill inc">${esc(i.supplier)} €</span>` : `<span class="pill ext">${esc(i.supplier)}</span>`;
 
@@ -2416,24 +2662,29 @@ function ofMode(preview) {
 function renderOfList() {
   OF.data = null; ofMode(false);
   const list = PL.offers.slice().sort((a, b) => (a.rooms[0]?.setup || '').localeCompare(b.rooms[0]?.setup || ''));
-  $('#ofBody').innerHTML = `<p class="muted" style="margin:6px 0 10px">L'application lit la fiche (société, salles, dates de montage, matériel) et te montre ce qu'elle a compris <b>avant</b> d'enregistrer. L'étiquette <a class="ofr" style="pointer-events:none">📄 Offre</a> apparaît ensuite dans la grille, dans la salle, au jour du montage : un clic ouvre le PDF.</p>` +
-    (list.length ? `<div class="lbl">Offres enregistrées (${list.length})</div><div class="oflist">` + list.map((o) => `<div class="o">
-      <span style="flex:1;min-width:240px"><b>${esc(o.client)}</b> <span class="muted">${esc([o.title, o.version].filter(Boolean).join(' '))}</span><br>
-      <span class="muted" style="font-size:13px">${o.rooms.map((r) => `${esc(r.room_ids.length ? r.room_ids.map(locName).join('+') : (r.name || '?') + ' (hors grille)')} : montage ${r.setup ? dayLabel(r.setup) : '?'}`).join(' · ')}</span></span>
+  // d'abord les offres de la semaine affichée dans le planning, puis les autres (repliées)
+  const days = weekDays(PL.week || weekStart(isoToday()));
+  const wk = new Set(offersOnDays(days).map((o) => o.id));
+  const row = (o) => `<div class="o">
+      <span style="flex:1;min-width:240px"><b>${esc(o.client)}</b> <span class="muted">${esc([o.title, o.version].filter(Boolean).join(' '))}</span>${o.label ? ` <a class="ofr" style="pointer-events:none">📄 ${esc(o.label)}</a>` : ''}<br>
+      <span class="muted" style="font-size:13px">${o.rooms.map((r) => `${esc(r.room_ids.length && !r.skip ? roomsLabel(r.room_ids) : (r.name || '?') + ' (hors grille)')} : montage ${r.setup ? dayLabel(r.setup) : '?'}`).join(' · ')}</span></span>
       <a class="btn ghost" style="text-decoration:none;padding:4px 10px" href="${apercuUrl(`/api/offers/${o.id}/pdf`, `Fiche technique - ${o.client}${o.version ? ' ' + o.version : ''}`)}" target="_blank" rel="noopener">Ouvrir le PDF</a>
-      <button type="button" class="btn ghost" data-ofdel="${o.id}" style="padding:4px 10px;color:var(--err)">${OF.confirmDel === o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`).join('') + '</div>'
+      <button type="button" class="btn ghost" data-ofdel="${o.id}" style="padding:4px 10px;color:var(--err)">${OF.confirmDel === o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`;
+  const mine = list.filter((o) => wk.has(o.id)), rest = list.filter((o) => !wk.has(o.id));
+  $('#ofBody').innerHTML = `<p class="muted" style="margin:6px 0 10px">L'application lit la fiche (société, salles, dates de montage, matériel) et te montre ce qu'elle a compris <b>avant</b> d'enregistrer. L'étiquette <a class="ofr" style="pointer-events:none">📄 Offre</a> apparaît ensuite dans la grille, dans la salle, au jour du montage : un clic ouvre le PDF. Pour renommer une étiquette, la retirer ou en ajouter une, clique sur la case dans la grille.</p>` +
+    (list.length ? `<div class="lbl">Semaine du ${dayLabel(days[0])} au ${dayLabel(days[days.length - 1])} (${mine.length})</div><div class="oflist">${mine.map(row).join('') || '<p class="muted" style="margin:6px 0">Aucune offre cette semaine.</p>'}</div>`
+      + (rest.length ? `<details style="margin-top:12px" ${rest.some((o) => o.id === OF.confirmDel) ? 'open' : ''}><summary class="lbl" style="cursor:pointer">Autres offres enregistrées (${rest.length})</summary><div class="oflist">${rest.map(row).join('')}</div></details>` : '')
       : '<p class="muted">Aucune offre enregistrée pour le moment.</p>');
 }
 $('#plSource').addEventListener('click', (e) => {
   if (!e.target.closest('#plOffer')) return;
-  OF.confirmDel = null; $('#ofFile').value = ''; $('#ofErr').textContent = '';
+  OF.confirmDel = null; OF.cell = null; $('#ofFile').value = ''; $('#ofErr').textContent = '';
   renderOfList(); $('#ofDlg').showModal();
 });
 $('#ofClose').onclick = () => $('#ofDlg').close();
 $('#ofBack').onclick = () => { $('#ofFile').value = ''; $('#ofErr').textContent = ''; renderOfList(); };
 
-$('#ofFile').addEventListener('change', async () => {
-  const f = $('#ofFile').files[0]; if (!f) return;
+async function ofLoadFile(f) {
   $('#ofErr').textContent = ''; $('#ofBody').innerHTML = '<p class="muted">Lecture de la fiche en cours…</p>';
   try {
     const r = await fetch('/api/offers/preview', { method: 'POST', headers: { 'X-Filename': encodeURIComponent(f.name) }, body: f });
@@ -2441,9 +2692,17 @@ $('#ofFile').addEventListener('change', async () => {
     if (!r.ok) throw new Error(j.error || 'Erreur');
     OF.data = j; OF.picked = new Set();
     if (j.manual) j.rooms = [{ name: '', page: 1, setup: '', room_ids: [], items: [] }];
+    // fiche importée depuis une case : salle (et, si la fiche ne se lit pas, jour et société) de la case proposés
+    const c = OF.cell;
+    if (c && c.room_ids.length) {
+      if (j.manual) Object.assign(j.rooms[0], { setup: c.date, room_ids: [...c.room_ids] });
+      else if (j.rooms.length === 1 && !j.rooms[0].room_ids.length) j.rooms[0].room_ids = [...c.room_ids];
+      if (j.manual && c.client) j.client = c.client;
+    }
     renderOfPreview();
   } catch (err) { renderOfList(); $('#ofErr').textContent = err.message; }
-});
+}
+$('#ofFile').addEventListener('change', () => { const f = $('#ofFile').files[0]; if (f) ofLoadFile(f); });
 
 function ofRoomCell(r, i) {
   const names = r.room_ids.map(locName);
@@ -2495,7 +2754,7 @@ $('#ofBody').addEventListener('click', async (e) => {
     if (OF.confirmDel !== id) { OF.confirmDel = id; renderOfList(); return; }
     try {
       const r = await api('/api/offers/delete', { id });
-      PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+      setPL(r);
       OF.confirmDel = null; renderOfList(); renderPlanning(); toast('Offre supprimée · annulable dans Contrôle → Journal');
     } catch (err) { $('#ofErr').textContent = err.message; }
     return;
@@ -2533,9 +2792,10 @@ $('#ofSave').onclick = async () => {
       token: d.token, filename: d.filename, client: $('#ofClient').value, version: d.version || '', title: d.title || '', dated: d.dated || '',
       rooms: d.rooms, services: d.services || [], replace_ids: $('#ofReplace')?.checked ? d.replaces.map((o) => o.id) : [],
     });
-    PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+    setPL(r);
     const first = d.rooms.filter((x) => x.setup && !x.skip).map((x) => x.setup).sort()[0];
-    if (first) { PL.week = weekStart(first); PL.day = first; }
+    if (first && !OF.cell) { PL.week = weekStart(first); PL.day = first; } // importée depuis une case : on reste sur la semaine affichée
+    OF.cell = null;
     $('#ofDlg').close(); renderPlanning();
     toast(`Offre enregistrée ✔${first ? ` — montage le ${dayLabel(first)}` : ''} · noté dans Contrôle → Journal`);
   } catch (err) { $('#ofErr').textContent = err.message; }
