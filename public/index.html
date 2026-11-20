@@ -124,6 +124,8 @@
   .toast::before { content:"✓"; width:22px; height:22px; border-radius:50%; background:var(--green); color:#fff; display:grid; place-items:center; font-size:13px; font-weight:700; flex:none; }
   .toast.err { background:var(--err); color:#fff; }
   .toast.err::before { content:"!"; background:rgba(255,255,255,.25); }
+  .toastundo { margin-left:6px; background:transparent; color:inherit; border:1px solid color-mix(in srgb, currentColor 45%, transparent); border-radius:8px; padding:3px 11px; font:inherit; font-weight:700; cursor:pointer; }
+  .toastundo:hover { background:color-mix(in srgb, currentColor 15%, transparent); }
   .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:16px; }
   h2 { margin:0 0 12px; font-size:17px; }
   .hidden { display:none; }
@@ -508,6 +510,8 @@
   dialog { border:0; border-radius:18px; padding:22px; background:var(--card); color:var(--ink); box-shadow:var(--shadow-lg); }
   dialog[open] { animation:dlgpop .22s cubic-bezier(.2,.9,.3,1.2); }
   dialog::backdrop { background:rgba(15,12,10,.45); backdrop-filter:blur(3px); }
+  /* boutons du bas toujours visibles, même quand la fenêtre défile */
+  dialog .dlgfoot { position:sticky; bottom:-22px; z-index:2; background:var(--card); margin:14px -22px -22px; padding:12px 22px 22px; border-top:1px solid var(--line); }
   @keyframes dlgpop { from { opacity:0; transform:translateY(12px) scale(.97); } to { opacity:1; transform:none; } }
   dialog h2 { margin-top:0; font-size:19px; }
 
@@ -758,7 +762,7 @@
     <div id="phBody"></div>
     <p class="warn" id="phErr"></p>
   </div>
-  <div class="row" style="margin-top:14px;align-items:center">
+  <div class="row dlgfoot" style="align-items:center">
     <button type="button" class="btn ghost" id="phBack">← Retour</button>
     <span style="flex:1"></span>
     <button type="button" class="btn ghost" id="phNoMove" title="Marque l'étape comme faite sans toucher au stock">Valider sans déplacer</button>
@@ -795,7 +799,7 @@
     <input type="file" id="evOfFile" accept=".pdf,application/pdf" hidden>
     <p class="warn" id="evErr"></p>
   </div>
-  <div class="row" style="margin-top:14px;justify-content:space-between">
+  <div class="row dlgfoot" style="justify-content:space-between">
     <button type="button" class="btn ghost" id="evDel" style="color:var(--err)">Supprimer</button>
     <span class="row"><button type="button" class="btn ghost" id="evCancel">Annuler</button><button type="button" class="btn" id="evSave">Enregistrer</button></span>
   </div>
@@ -806,7 +810,7 @@
     <div id="noteBody" class="evsec"></div>
     <div id="actBody" class="evsec"></div>
   </div>
-  <div class="row" style="margin-top:14px;justify-content:flex-end">
+  <div class="row dlgfoot" style="justify-content:flex-end">
     <button type="button" class="btn ghost" id="noteClose">Fermer</button>
   </div>
 </dialog>
@@ -867,9 +871,15 @@ async function api(path, body) {
   if (!r.ok) throw new Error(j.error || 'Erreur');
   return j;
 }
-function toast(msg, err) {
+function toast(msg, err, undo) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'flex';
-  clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), 2800);
+  // bouton « Annuler » : le message reste plus longtemps pour laisser le temps de rattraper un mauvais clic
+  if (undo) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'toastundo'; b.textContent = 'Annuler';
+    b.onclick = () => { clearTimeout(toast.t); t.style.display = 'none'; undo(); };
+    t.append(b);
+  }
+  clearTimeout(toast.t); toast.t = setTimeout(() => (t.style.display = 'none'), undo ? 6000 : 2800);
 }
 const floorLabel = (f) => (f === null || f === undefined ? 'Autres espaces' : f > 0 ? `Étage +${f}` : `Étage ${f}`);
 function locGroups() {
@@ -2151,14 +2161,25 @@ function openEvent(ev, pre) {
 const beoArchived = (ev) => !!ev?.info?.beo && Object.values(PL.beoArchive || {}).some((w) => [w.book, ...(w.parts || [])].some((x) => x && x.beos.includes(String(ev.info.beo))));
 const beoUrl = (ev) => apercuUrl(`/api/beo/n/${encodeURIComponent(ev.info.beo)}/pdf`, `BEO ${ev.info.beo} - ${ev.client}`) + `&beo=${encodeURIComponent(ev.info.beo)}`;
 
-// Clic sur une case qui a un BEO : choix Modifier / Voir le BEO
+// Clic sur une case : « ✓ Prêt » (ou « ↩ À préparer ») sans passer par la fenêtre Modifier, Voir le BEO, Modifier
 function closeEvMenu() { document.querySelector('.evmenu')?.remove(); }
 function openEvMenu(ev, x, y) {
   closeEvMenu();
   const m = document.createElement('div'); m.className = 'evmenu';
   const xtra = avExtra(ev);
-  m.innerHTML = `<div class="h">${esc(ev.client)}<small>BEO n° ${esc(ev.info.beo)}${ev.start ? ` · ${esc(ev.start)}–${esc(ev.end || '?')}` : ''}</small></div>
-    <a class="btn" href="${beoUrl(ev)}" target="_blank" rel="noopener" data-m="beo">📄 Voir le BEO</a>
+  const green = ev.color === 'green';
+  // une 2e fenêtre suit (…) : matériel de la fiche à déplacer, ou validation à annuler
+  const todo = PHASES.filter((p) => pendingPhases(ev).includes(p));
+  const step = green ? (ev.done || []).length > 0 : todo.length > 0 && offersForEvent(ev).length > 0;
+  const sub = [ev.info?.beo ? `BEO n° ${esc(ev.info.beo)}` : '', ev.start ? `${esc(ev.start)}–${esc(ev.end || '?')}` : ''].filter(Boolean).join(' · ');
+  // déjà dans la salle : matériel ajouté et actions pas faites (mêmes listes que la fenêtre)
+  const nN = notesIn(ev.room_ids).length, nA = actionsIn(ev.room_ids).filter((a) => !a.done_ts).length;
+  const cnt = [nN ? `🧰 ${nN}` : '', nA ? `⏰ ${nA}` : ''].filter(Boolean).join(' · ');
+  m.innerHTML = `<div class="h">${esc(ev.client)}${sub ? `<small>${sub}</small>` : ''}</div>
+    ${green ? `<button type="button" class="btn ghost" data-m="todo"${step ? ' title="Une fenêtre s\'ouvre pour remettre le matériel à sa place"' : ''}>↩ À préparer${step ? '…' : ''}</button>`
+      : `<button type="button" class="btn ok" data-m="ready"${step ? ' title="Une fenêtre s\'ouvre pour déplacer le matériel de la fiche technique"' : ''}>✓ Prêt</button>`}
+    <button type="button" class="btn ghost" data-m="extra" title="Matériel ajouté dans la salle et actions à faire">🧰 Actions${cnt ? `<span class="muted" style="margin-left:auto;font-weight:400;font-size:12px">${cnt}</span>` : ''}</button>
+    ${beoArchived(ev) ? `<a class="btn ghost" href="${beoUrl(ev)}" target="_blank" rel="noopener" data-m="beo">📄 Voir le BEO</a>` : ''}
     <button type="button" class="btn ghost" data-m="edit">✎ Modifier</button>
     ${xtra.length ? `<div class="muted" style="font-size:12px;padding:8px 6px 0"><b class="avx" style="float:none">ⓘ</b> Infos AV en plus : ${esc(xtra.join(' · '))}</div>` : ''}`;
   document.body.append(m);
@@ -2169,7 +2190,23 @@ function openEvMenu(ev, x, y) {
     const b = e.target.closest('[data-m]'); if (!b) return;
     closeEvMenu();
     if (b.dataset.m === 'edit') openEvent(ev);
+    else if (b.dataset.m === 'ready') quickColor(ev, 'green');
+    else if (b.dataset.m === 'todo') quickColor(ev, 'red');
+    else if (b.dataset.m === 'extra') openRoomExtra(ev.room_ids, 'notes', ev);
   });
+}
+// même enregistrement que Modifier → Prêt → Enregistrer, avec « Annuler » dans le message pour rattraper un mauvais clic
+const evBody = (ev, color) => ({ id: ev.id, client: ev.client, start: ev.start, end: ev.end, date: ev.date, end_date: ev.end_date,
+  detail: ev.detail, color, tags: ev.tags, urgent: !!ev.urgent, room_ids: ev.room_ids });
+async function quickColor(ev, color) {
+  const body = evBody(ev, color);
+  if (readyStep(ev, body)) return;
+  try {
+    setPL(await api('/api/planning/event', body)); renderPlanning();
+    toast(`${ev.client} : ${PL_COLOR[color]} ✔`, false, async () => {
+      try { setPL(await api('/api/planning/event', evBody(ev, ev.color || ''))); renderPlanning(); toast('Annulé ✔'); } catch (err) { toast(err.message, true); }
+    });
+  } catch (err) { toast(err.message, true); }
 }
 document.addEventListener('mousedown', (e) => { if (!e.target.closest('.evmenu')) closeEvMenu(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeEvMenu(); });
@@ -2184,7 +2221,7 @@ $('#plBody').addEventListener('click', (e) => {
   if (c) {
     const ev = PL.events.find((x) => x.id === Number(c.dataset.edit || c.dataset.last));
     if (!ev) return;
-    return beoArchived(ev) ? openEvMenu(ev, e.clientX + 4, e.clientY + 4) : openEvent(ev);
+    return ev.room_ids.length ? openEvMenu(ev, e.clientX + 4, e.clientY + 4) : openEvent(ev); // sans salle : choisir la salle d'abord
   }
   const n = e.target.closest('[data-new]');
   if (n) openEvent(null, { date: n.dataset.d, room: Number(n.dataset.r) });
@@ -2203,21 +2240,26 @@ const evPayload = () => ({
 $('#evSave').onclick = async () => {
   $('#evErr').textContent = '';
   const body = evPayload();
-  // « Prêt » sur une case avec une offre et un montage / démontage pas encore validé → 2e étape : le matériel
   const ev = EV.id ? PL.events.find((x) => x.id === EV.id) : null;
-  // case validée repassée en rouge (ou autre) : proposer d'annuler la validation et de remettre le matériel
-  if (ev && ev.color === 'green' && body.color !== 'green' && (ev.done || []).length) return openUndo(ev, body);
-  if (ev && body.color === 'green') {
-    const todo = PHASES.filter((p) => pendingPhases(ev, body.tags).includes(p));
-    const ofs = offersForEvent({ ...ev, ...body });
-    if (todo.length && ofs.length) return openPhase(ev, body, todo, ofs);
-  }
+  if (ev && readyStep(ev, body)) return;
   try {
     const r = await api('/api/planning/event', body);
     setPL(r);
     $('#evDlg').close(); renderPlanning(); toast('Planning enregistré ✔');
   } catch (err) { $('#evErr').textContent = err.message; }
 };
+// 2e étape avant d'enregistrer (fenêtre Modifier ou menu de la case) → true si une fenêtre s'est ouverte :
+// « Prêt » sur une case avec une offre et un montage / démontage pas encore validé → le matériel ;
+// case validée repassée en rouge (ou autre) → annuler la validation et remettre le matériel
+function readyStep(ev, body) {
+  if (ev.color === 'green' && body.color !== 'green' && (ev.done || []).length) { openUndo(ev, body); return true; }
+  if (body.color === 'green') {
+    const todo = PHASES.filter((p) => pendingPhases(ev, body.tags).includes(p));
+    const ofs = offersForEvent({ ...ev, ...body });
+    if (todo.length && ofs.length) { openPhase(ev, body, todo, ofs); return true; }
+  }
+  return false;
+}
 $('#evDel').onclick = async () => {
   if (!EV.confirmDel) { EV.confirmDel = true; $('#evDel').textContent = 'Confirmer la suppression'; return; }
   try {
@@ -2245,9 +2287,9 @@ async function addNote(box) {
   const inp = box.querySelector('[data-notetxt]'); const text = inp?.value.trim();
   if (!text) return inp?.focus();
   try {
-    // depuis une case : rattaché à l'événement (société affichée à côté du matériel)
-    const fromEv = box.id === 'evNotes';
-    setPL(await api('/api/notes/add', { room_ids: box._ctx.ids, text, event_id: fromEv ? EV.id : null, client: fromEv ? $('#evClient').value.trim() : '' }));
+    // depuis une case (Modifier ou menu de la case) : rattaché à l'événement (société affichée à côté du matériel)
+    const ev = box.id === 'evNotes' ? { id: EV.id, client: $('#evClient').value.trim() } : box._ctx.ev;
+    setPL(await api('/api/notes/add', { room_ids: box._ctx.ids, text, event_id: ev?.id ?? null, client: ev?.client || '' }));
     inp.value = ''; afterRoomExtra(); toast('Ajouté dans la salle ✔'); box.querySelector('[data-notetxt]')?.focus();
   } catch (err) { toast(err.message, true); }
 }
@@ -2308,10 +2350,10 @@ async function addAction(box) {
   if (!text) return inp?.focus();
   const val = (k) => box.querySelector(`[data-act${k}]`).value;
   try {
-    // depuis une case : rattachée à l'événement (société affichée à côté de l'action)
-    const fromEv = box.id === 'evActs';
+    // depuis une case (Modifier ou menu de la case) : rattachée à l'événement (société affichée à côté de l'action)
+    const ev = box.id === 'evActs' ? { id: EV.id, client: $('#evClient').value.trim() } : box._ctx.ev;
     setPL(await api('/api/actions/add', { room_ids: box._ctx.ids, kind: val('kind'), date: val('date'), time: val('time'), text,
-      event_id: fromEv ? EV.id : null, client: fromEv ? $('#evClient').value.trim() : '' }));
+      event_id: ev?.id ?? null, client: ev?.client || '' }));
     inp.value = ''; afterRoomExtra(); toast('Action ajoutée ✔'); box.querySelector('[data-acttxt]')?.focus();
   } catch (err) { toast(err.message, true); }
 }
@@ -2341,12 +2383,14 @@ for (const box of [$('#evActs'), $('#actBody')]) {
   box.addEventListener('change', (e) => { if (e.target.closest('[data-actkind]')) renderActions(box, box._ctx.ids, box._ctx); });
   box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('[data-acttxt]')) { e.preventDefault(); addAction(box); } });
 }
-// depuis l'onglet Salles (salle seule ou salle réunie) ou le planning : matériel ajouté et actions à faire de la salle
-function openRoomExtra(ids, focus = 'notes') {
-  $('#noteTitle').textContent = `${roomsLabel(ids)} — matériel ajouté et actions à faire`;
+// depuis l'onglet Salles (salle seule ou salle réunie) ou le planning : matériel ajouté et actions à faire de la salle ;
+// depuis le menu d'une case (ev) : rattachés à l'événement, et ses jours proposés pour les actions (comme dans Modifier)
+function openRoomExtra(ids, focus = 'notes', ev = null) {
+  const ctx = ev ? { ev: { id: ev.id, client: ev.client }, from: ev.date, to: ev.end_date } : {};
+  $('#noteTitle').textContent = ev ? `${ev.client} — ${roomsLabel(ids)}` : `${roomsLabel(ids)} — matériel ajouté et actions à faire`;
   $('#noteBody').innerHTML = ''; $('#actBody').innerHTML = '';
-  renderNotes($('#noteBody'), ids);
-  renderActions($('#actBody'), ids);
+  renderNotes($('#noteBody'), ids, ctx);
+  renderActions($('#actBody'), ids, ctx);
   $('#noteDlg').showModal();
   $(focus === 'actions' ? '#actBody [data-acttxt]' : '#noteBody [data-notetxt]')?.focus();
 }
@@ -2683,19 +2727,21 @@ function renderPhase() {
 }
 
 function openPhase(ev, body, todo, ofs) {
-  Object.assign(PH, { mode: 'do', ev, body, todo, ofs, phase: todo[0] });
+  Object.assign(PH, { mode: 'do', ev, body, todo, ofs, phase: todo[0], back: $('#evDlg').open });
   buildPhaseRows();
   $('#phErr').textContent = '';
-  $('#evDlg').close(); renderPhase(); $('#phDlg').showModal();
+  $('#evDlg').close(); renderPhase(); showPhase();
 }
+// ouverte depuis la fenêtre Modifier : « ← Retour » y revient ; depuis le menu de la case : « Annuler » ferme
+function showPhase() { $('#phBack').textContent = PH.back ? '← Retour' : 'Annuler'; $('#phDlg').showModal(); }
 
 // ----- Annuler une validation (case passée en « Prêt » par erreur) : trajets inverses de ce qui a été déplacé
 function openUndo(ev, body) {
   const done = PHASES.filter((p) => (ev.done || []).includes(p));
-  Object.assign(PH, { mode: 'undo', ev, body: { ...body, color: body.color === 'green' ? 'red' : body.color }, todo: done, ofs: [], phase: (ev.done || []).slice(-1)[0] || done[0] });
+  Object.assign(PH, { mode: 'undo', ev, body: { ...body, color: body.color === 'green' ? 'red' : body.color }, todo: done, ofs: [], phase: (ev.done || []).slice(-1)[0] || done[0], back: $('#evDlg').open });
   buildUndoRows();
   $('#phErr').textContent = '';
-  $('#evDlg').close(); renderUndo(); $('#phDlg').showModal();
+  $('#evDlg').close(); renderUndo(); showPhase();
 }
 function buildUndoRows() {
   const agg = new Map();
@@ -2744,7 +2790,7 @@ $('#evDone').addEventListener('click', (e) => {
   const ev = PL.events.find((x) => x.id === EV.id); if (ev) openUndo(ev, evPayload());
 });
 
-$('#phBack').onclick = () => { $('#phDlg').close(); $('#evDlg').showModal(); };
+$('#phBack').onclick = () => { $('#phDlg').close(); if (PH.back) $('#evDlg').showModal(); };
 $('#phChoice').addEventListener('click', (e) => {
   const b = e.target.closest('[data-p]'); if (!b || b.dataset.p === PH.phase) return;
   PH.phase = b.dataset.p;
