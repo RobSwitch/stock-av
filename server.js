@@ -139,14 +139,19 @@ function moveOne({ item_id, from, to, qty, note, batch }) {
 }
 
 // Tout ou rien : si une ligne échoue, rien n'est enregistré
+let txDepth = 0;
 function inTransaction(fn) {
+  if (txDepth) return fn(); // déjà dans une transaction (import noté au journal) : tout est annulé ensemble en cas d'erreur
   db.exec('BEGIN');
+  txDepth++;
   try {
     fn();
     db.exec('COMMIT');
   } catch (e) {
     db.exec('ROLLBACK');
     throw e;
+  } finally {
+    txDepth--;
   }
 }
 
@@ -347,11 +352,11 @@ function matchRoom(raw, locs) {
   return [];
 }
 
-function planningData() {
+function planningEvents() {
   const locs = db.prepare('SELECT id, name FROM locations').all();
   const known = new Set(locs.map((l) => l.id));
   const cache = {};
-  const events = db.prepare('SELECT * FROM planning_events ORDER BY date, id').all().map((r) => {
+  return db.prepare('SELECT * FROM planning_events ORDER BY date, id').all().map((r) => {
     const rooms = JSON.parse(r.rooms || '[]');
     let ids = r.room_ids ? JSON.parse(r.room_ids) : [...new Set(rooms.flatMap((n) => (cache[n] ??= matchRoom(n, locs))))];
     return {
@@ -362,6 +367,14 @@ function planningData() {
       info: r.info ? JSON.parse(r.info) : null, done: JSON.parse(r.done || '[]'),
     };
   });
+}
+// La même case deux fois : même société, même horaire, mêmes jours, une salle en commun (ex. un import validé plusieurs fois).
+// Ça n'arrive jamais : un import met à jour la case qui existe, une case créée à la main en double est refusée.
+const sameCase = (a, b) => beopdf.nz(a.client) === beopdf.nz(b.client) && (a.start || '') === (b.start || '') && (a.end || '') === (b.end || '')
+  && a.date === b.date && (a.end_date || a.date) === (b.end_date || b.date) && a.room_ids.some((id) => b.room_ids.includes(id));
+const doubleOf = (ev, exceptId) => planningEvents().find((x) => x.id !== exceptId && sameCase(x, ev));
+function planningData() {
+  const events = planningEvents();
   const offers = offersList(), offerMoves = offerMovesList();
   return { events, offers, offerMoves, external: externalList(offers, offerMoves), notes: roomNotesList(), actions: roomActionsList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
 }
@@ -396,6 +409,12 @@ function upsertPlanningEvent(b) {
   return b.id || db.prepare('SELECT last_insert_rowid() id').get().id;
 }
 function savePlanningEvent(b) {
+  // jamais deux fois la même case : refusé à la création, ou quand une modification la rendrait identique à une autre
+  // (sauf si c'était déjà le cas avant : un ancien doublon peut toujours être modifié ou supprimé)
+  const before = b.id ? planningEvents().find((x) => x.id === Number(b.id)) : null;
+  const ev = { client: String(b.client || '').trim(), date: b.date, end_date: b.end_date || b.date, start: b.start, end: b.end, room_ids: (b.room_ids || []).map(Number) };
+  const dup = planningEvents().find((x) => x.id !== Number(b.id) && sameCase(x, ev) && !(before && sameCase(x, before)));
+  if (dup) throw new Error(`Cette case existe déjà : ${dup.client} le ${dmy(dup.date)}${dup.start ? ` de ${dup.start} à ${dup.end || '?'}` : ''} dans ${dup.rooms.join(', ')}. Modifie celle-là plutôt que d'en créer une deuxième.`);
   upsertPlanningEvent(b);
   bumpPlanning();
   return planningData();
@@ -447,7 +466,7 @@ function previewBeoPdf(buf, filename) {
   const saved = pdfMapGet();
   const r = beopdf.parseBeoBook(buf, beopdf.makeMatcher(locs, saved));
   const nameOf = new Map(locs.map((l) => [l.id, l.name]));
-  const existing = planningData().events;
+  const existing = planningEvents();
   const withMoves = new Set(db.prepare('SELECT DISTINCT event_id FROM offer_moves').all().map((m) => m.event_id));
   const matched = new Set();
   const twins = new Map(); // n° de ligne de l'aperçu → événement du planning
@@ -475,9 +494,17 @@ function previewBeoPdf(buf, filename) {
     list.forEach((x) => matched.add(x.id));
     if (list.length) absorbed.set(i, list);
   });
+  // Cases en double dans le planning (même société, même horaire, mêmes salles, même jour) : fusionnées dans celle du BEO
+  const doubles = new Map();
+  r.events.forEach((e, i) => {
+    const twin = twins.get(i);
+    const list = twin ? existing.filter((x) => !matched.has(x.id) && sameCase(x, twin) && sameSet(x.room_ids, twin.room_ids) && !withMoves.has(x.id)) : [];
+    list.forEach((x) => matched.add(x.id));
+    if (list.length) doubles.set(i, list);
+  });
   const events = r.events.map((e, i) => {
     const twin = twins.get(i) || null;
-    const absorb = absorbed.get(i) || [];
+    const absorb = absorbed.get(i) || [], dbl = doubles.get(i) || [];
     let state = 'new', existing_id = null; const changes = [];
     if (twin) {
       existing_id = twin.id;
@@ -492,12 +519,13 @@ function previewBeoPdf(buf, filename) {
         const merged = absorb.length ? ` (${absorb.length + 1} cases réunies en une)` : twin.room_ids.length > e.room_ids.length ? ' (salle divisée)' : '';
         changes.push({ what: 'Salle', from: [twin, ...absorb].map((x) => roomsLabel(x.room_ids, nameOf)).join(', '), to: roomsLabel(e.room_ids, nameOf) + merged });
       }
+      if (dbl.length) changes.push({ what: 'En double', from: `${dbl.length + 1} fois la même case`, to: 'une seule case (les copies sont supprimées)' });
       // 'info' : identique, mais les détails du BEO manquent (ou la section AV complète, absente des imports plus anciens)
       state = changes.length ? 'differs' : twin.info?.beo && Array.isArray(twin.info.av) ? 'same' : 'info';
     }
     const same = existing.filter((x) => onDay(x, e.date) && overlaps(x.room_ids, e.room_ids));
     return {
-      i, ...e, room_name: roomsLabel(e.room_ids, nameOf), state, existing_id, changes, absorb: absorb.map((x) => x.id),
+      i, ...e, room_name: roomsLabel(e.room_ids, nameOf), state, existing_id, changes, absorb: [...absorb, ...dbl].map((x) => x.id),
       was_ready: !!twin && twin.color === 'green', ready_done: twin ? twin.done || [] : [],
       clash: !twin && same.length ? same.map((x) => x.client) : [],
       selected: state === 'differs' || state === 'info' || (state === 'new' && e.hasAv),
@@ -763,8 +791,9 @@ function relinkOffers(fromId, toId) {
 }
 
 function saveOffer(b, j) {
-  const src = tmpFile(b.token);
-  if (!fs.existsSync(src)) throw new Error('Envoi expiré : choisis à nouveau le fichier');
+  // une fiche lue ne s'enregistre qu'une fois (son PDF en attente est rangé à l'enregistrement)
+  const src = /^[0-9a-f-]{36}$/.test(b.token || '') && tmpFile(b.token);
+  if (!src || !fs.existsSync(src)) throw restartError(new Error('Cette fiche a déjà été enregistrée, ou son envoi a expiré : choisis à nouveau le fichier.'));
   const client = String(b.client || '').trim();
   if (!client) throw new Error('Indique le nom de la société / du client');
   const rooms = (b.rooms || []).map((r) => ({
@@ -785,22 +814,25 @@ function saveOffer(b, j) {
     if (!r.room_ids.length && !r.skip) throw new Error(`Choisis la salle de l'application pour « ${r.name || 'cette offre'} »`);
   }
   let id;
-  const oldFiles = (b.replace_ids || []).map(Number).map(offerFile); // anciennes versions : remplacées par celle-ci
-  const rel = offerTarget(client, b.version || '', rooms, b.dated, oldFiles);
-  const dest = path.join(OFFER_DIR, rel);
-  inTransaction(() => {
-    for (const old of (b.replace_ids || []).map(Number)) { undoOffer(old); db.prepare('DELETE FROM offers WHERE id=?').run(old); }
-    const links = applyOffer(client, rooms);
-    learnEquipment(rooms);
-    id = Number(db.prepare('INSERT INTO offers (filename, client, version, title, dated, rooms, services, links, file) VALUES (?,?,?,?,?,?,?,?,?)')
-      .run(b.filename || '', client, b.version || '', b.title || '', b.dated || '', JSON.stringify(rooms), JSON.stringify(b.services || []), JSON.stringify(links), rel).lastInsertRowid);
-    bumpPlanning();
-  });
-  j?.source(src);
-  // anciennes versions : mises de côté dans le journal (annulation possible), sinon supprimées
-  for (const f of oldFiles) { if (j) j.keep(f); else fs.rmSync(f, { force: true }); }
-  fs.renameSync(src, dest);
-  j?.created.push(dest);
+  // à partir d'ici, une erreur annule tout (journaled) et l'envoi n'est plus valable : il faudra choisir à nouveau la fiche
+  try {
+    const oldFiles = (b.replace_ids || []).map(Number).map(offerFile); // anciennes versions : remplacées par celle-ci
+    const rel = offerTarget(client, b.version || '', rooms, b.dated, oldFiles);
+    const dest = path.join(OFFER_DIR, rel);
+    inTransaction(() => {
+      for (const old of (b.replace_ids || []).map(Number)) { undoOffer(old); db.prepare('DELETE FROM offers WHERE id=?').run(old); }
+      const links = applyOffer(client, rooms);
+      learnEquipment(rooms);
+      id = Number(db.prepare('INSERT INTO offers (filename, client, version, title, dated, rooms, services, links, file) VALUES (?,?,?,?,?,?,?,?,?)')
+        .run(b.filename || '', client, b.version || '', b.title || '', b.dated || '', JSON.stringify(rooms), JSON.stringify(b.services || []), JSON.stringify(links), rel).lastInsertRowid);
+      bumpPlanning();
+    });
+    j?.source(src);
+    // anciennes versions : mises de côté dans le journal (annulation possible), sinon supprimées
+    for (const f of oldFiles) { if (j) j.keep(f); else fs.rmSync(f, { force: true }); }
+    fs.renameSync(src, dest);
+    j?.created.push(dest);
+  } catch (e) { fs.rmSync(src, { force: true }); throw restartError(e); }
   return id;
 }
 
@@ -908,6 +940,8 @@ function validatePhase(b) {
   inTransaction(() => {
     const id = upsertPlanningEvent(b.event);
     const ev = db.prepare('SELECT client, tags, done, rooms FROM planning_events WHERE id=?').get(id);
+    // déjà validé (double-clic, autre poste) : le matériel ne doit pas être déplacé une 2e fois
+    if (JSON.parse(ev.done || '[]').includes(phase)) throw new Error(`Le ${phase.toLowerCase()} est déjà validé dans cette case (le matériel a déjà été déplacé)`);
     const itemMap = metaJson('offer_item_map');
     const done = [];
     for (const l of lines) {
@@ -1106,16 +1140,30 @@ function finishImport(j, label) {
   };
   db.prepare('UPDATE import_log SET changes=?, label=COALESCE(?, label) WHERE id=?').run(JSON.stringify(changes), label || null, j.id);
 }
-// L'import a échoué : on remet les fichiers mis de côté et on efface la ligne du journal
+// L'import a échoué : la base est déjà remise comme avant (transaction) ; on enlève les fichiers rangés par l'import,
+// on remet ceux qui avaient été mis de côté et on efface la ligne du journal
 function abortImport(j) {
+  for (const f of j.created) { try { fs.rmSync(f, { force: true }); } catch {} }
   for (const r of j.replaced.slice().reverse()) { try { fs.renameSync(absFile(r.saved), absFile(r.rel)); } catch {} }
   db.prepare('DELETE FROM import_log WHERE id=?').run(j.id);
   fs.rmSync(j.dir, { recursive: true, force: true });
 }
+// Tout ou rien : planning, fiches, archive, fichiers et journal sont enregistrés ensemble — si une étape échoue
+// (PDF ouvert dans un autre programme…), rien n'est gardé et l'import peut être refait proprement
 function journaled(kind, filename, label, fn) {
   const j = startImport(kind, filename, label);
-  try { const out = fn(j); finishImport(j, typeof out?.label === 'string' ? out.label : null); return { ...out, journal_id: j.id }; }
-  catch (e) { abortImport(j); throw e; }
+  try {
+    let out;
+    inTransaction(() => { out = fn(j); finishImport(j, typeof out?.label === 'string' ? out.label : null); });
+    return { ...out, journal_id: j.id };
+  } catch (e) { abortImport(j); throw e; }
+}
+// Erreur d'un import avec fichier : rien n'a été enregistré et l'aperçu n'est plus valable (restart) → la fenêtre se vide,
+// il faut choisir à nouveau le fichier : on ne peut pas recliquer sur « Enregistrer » avec le même aperçu
+function restartError(e) {
+  if (['EBUSY', 'EPERM', 'EACCES'].includes(e.code)) e.message = `Le fichier « ${path.basename(e.path || '')} » est ouvert dans un autre programme (ou bloqué par la synchronisation) : ferme-le, puis recommence (${e.code})`;
+  e.restart = true;
+  return e;
 }
 
 // ---- Lecture du journal : ce qui a changé, en clair
@@ -1300,6 +1348,15 @@ function checksList() {
         detail: `${rn(rooms)} : ${a.client} (${a.start}–${a.end}) et ${b.client} (${b.start}–${b.end})` });
     }
   }
+  // 1 bis. la même case en double (même société, même horaire, même salle, même jour) — ex. un ancien import validé plusieurs fois
+  const twice = new Set();
+  for (const a of evs) if (a.end_date >= addDaysIso(today, -14) && !twice.has(a.id)) {
+    const copies = evs.filter((b) => b.id !== a.id && sameCase(a, b));
+    if (!copies.length) continue;
+    copies.forEach((b) => twice.add(b.id));
+    add('err', 'double', [a.id, ...copies.map((b) => b.id)].join(','), { date: a.date, event_id: a.id, title: 'Case en double',
+      detail: `${a.client}${a.start ? ` (${a.start}–${a.end || '?'})` : ''} — ${rn(a.room_ids)}, ${dmy(a.date)} : ${copies.length + 1} fois la même case. Supprime les copies (ou réimporte le BEO : elles seront fusionnées)` });
+  }
   // 2. événement à venir sans salle reconnue
   for (const e of evs) if (e.end_date >= today && !e.room_ids.length) {
     add('err', 'noroom', `${e.id}:${e.rooms.join()}`, { date: e.date, event_id: e.id, title: 'Événement sans salle',
@@ -1419,42 +1476,49 @@ const routes = {
   'POST /api/planning/pdf/import': (b) => {
     const list = Array.isArray(b.events) ? b.events : [];
     const removeIds = (Array.isArray(b.remove_ids) ? b.remove_ids : []).map(Number);
-    if (!list.length && !removeIds.length && !b.token) throw new Error('Aucun événement sélectionné');
     const nums = beoNums(b.beos);
     const wk = isDate(b.from) ? isoWeek(b.from) : null;
     const label = b.kind === 'book' ? `BEO Book — ${wk ? wk.label : 'semaine ?'}` : `BEO ${nums.join(', ') || '?'}${wk ? ` — ${wk.label}` : ''}`;
-    return journaled('beo', b.filename, label, (j) => {
-    let added = 0, updated = 0, removed = 0; const skipped = [];
-    inTransaction(() => {
-      for (const e of list) {
-        const old = e.replace_id ? db.prepare('SELECT * FROM planning_events WHERE id=?').get(e.replace_id) : null;
-        if (old && e.info_only) { db.prepare('UPDATE planning_events SET info=? WHERE id=?').run(JSON.stringify(e.info), old.id); updated++; continue; }
-        // salles du BEO (une salle réunie « Redwood 1 & 2 » = un seul événement sur ses parties)
-        const roomIds = (Array.isArray(e.room_ids) ? e.room_ids : [e.room_id]).map(Number);
-        // cases d'un ancien import (une par partie) fusionnées dans celle-ci : étiquettes gardées, liens des offres repris
-        const absorb = (Array.isArray(e.absorb) ? e.absorb : []).map(Number)
-          .map((id) => db.prepare('SELECT * FROM planning_events WHERE id=?').get(id))
-          .filter((x) => x && old && x.id !== old.id && !db.prepare('SELECT 1 FROM offer_moves WHERE event_id=?').get(x.id));
-        const ev = {
-          id: old ? old.id : null, date: e.date, end_date: old ? old.end_date : e.date, room_ids: roomIds,
-          client: e.client, detail: e.detail || (old ? old.detail : '') || '', start: e.start, end: e.end, // description vide dans le BEO : on garde celle du planning
-          color: old && old.color === 'green' ? 'green' : e.color, // un événement « Prêt » le reste
-          tags: [...new Set([old, ...absorb].filter(Boolean).flatMap((x) => JSON.parse(x.tags || '[]')))],
-          urgent: [old, ...absorb].some((x) => x && x.urgent), info: e.info || null,
-        };
-        if (old) ev.date = old.date;
-        try {
-          const id = upsertPlanningEvent(ev);
-          for (const x of absorb) { relinkOffers(x.id, id); db.prepare('DELETE FROM planning_events WHERE id=?').run(x.id); }
-          if (old) updated++; else added++;
-        } catch (err) { skipped.push(`${e.client} (${e.date}) : ${err.message}`); }
-      }
-      for (const id of removeIds) removed += db.prepare('DELETE FROM planning_events WHERE id=?').run(id).changes;
-      bumpPlanning();
-    });
-    const week = b.token ? archiveBeo(b.token, b.filename, b.from, b.to, b.kind === 'book' ? 'book' : 'parts', b.beos, j) : null;
-    return { added, updated, removed, skipped, archived: week, ...planningData() };
-    });
+    // Un aperçu ne s'enregistre qu'une fois : son PDF en attente est archivé (ou effacé) par l'import, et effacé si l'import échoue.
+    // Après une erreur ou un 2e clic, il faut donc choisir à nouveau le fichier (nouvel aperçu, comparé au planning tel qu'il est).
+    const src = /^[0-9a-f-]{36}$/.test(b.token || '') && beoTmp(b.token);
+    if (!src || !fs.existsSync(src)) throw restartError(new Error('Ce PDF a déjà été enregistré, ou son aperçu a expiré : choisis à nouveau le fichier pour voir où en est le planning.'));
+    const get = (id) => db.prepare('SELECT * FROM planning_events WHERE id=?').get(id);
+    try {
+      return journaled('beo', b.filename, label, (j) => {
+        let added = 0, updated = 0, removed = 0; const skipped = [];
+        for (const e of list) {
+          // salles du BEO (une salle réunie « Redwood 1 & 2 » = un seul événement sur ses parties)
+          const roomIds = (Array.isArray(e.room_ids) ? e.room_ids : [e.room_id]).map(Number);
+          // la même case existe déjà (même société, même horaire, même salle, même jour) : elle est mise à jour, jamais créée une 2e fois
+          const dup = e.replace_id ? null : doubleOf({ client: e.client, date: e.date, end_date: e.date, start: e.start, end: e.end, room_ids: roomIds });
+          const old = e.replace_id ? get(e.replace_id) : dup ? get(dup.id) : null;
+          if (old && e.info_only) { db.prepare('UPDATE planning_events SET info=? WHERE id=?').run(JSON.stringify(e.info), old.id); updated++; continue; }
+          // cases d'un ancien import (une par partie) ou en double fusionnées dans celle-ci : étiquettes gardées, liens des offres repris
+          const absorb = (Array.isArray(e.absorb) ? e.absorb : []).map(Number).map(get)
+            .filter((x) => x && old && x.id !== old.id && !db.prepare('SELECT 1 FROM offer_moves WHERE event_id=?').get(x.id));
+          const ev = {
+            id: old ? old.id : null, date: e.date, end_date: old ? old.end_date : e.date, room_ids: roomIds,
+            client: e.client, detail: e.detail || (old ? old.detail : '') || '', start: e.start, end: e.end, // description vide dans le BEO : on garde celle du planning
+            color: old && old.color === 'green' ? 'green' : e.color, // un événement « Prêt » le reste
+            tags: [...new Set([old, ...absorb].filter(Boolean).flatMap((x) => JSON.parse(x.tags || '[]')))],
+            urgent: [old, ...absorb].some((x) => x && x.urgent), info: e.info || null,
+          };
+          if (old) ev.date = old.date;
+          try {
+            const id = upsertPlanningEvent(ev);
+            for (const x of absorb) { relinkOffers(x.id, id); db.prepare('DELETE FROM planning_events WHERE id=?').run(x.id); }
+            if (old) updated++; else added++;
+          } catch (err) { skipped.push(`${e.client} (${e.date}) : ${err.message}`); }
+        }
+        for (const id of removeIds) removed += db.prepare('DELETE FROM planning_events WHERE id=?').run(id).changes;
+        bumpPlanning();
+        // archivage dans la même transaction (journaled) : si le PDF ne peut pas être rangé, rien n'est gardé dans le planning
+        const week = archiveBeo(b.token, b.filename, b.from, b.to, b.kind === 'book' ? 'book' : 'parts', b.beos, j);
+        fs.rmSync(src, { force: true }); // pas archivé (PDF sans date) : l'aperçu ne doit pas resservir non plus
+        return { added, updated, removed, skipped, archived: week, ...planningData() };
+      });
+    } catch (e) { fs.rmSync(src, { force: true }); throw restartError(e); }
   },
   // Journal des imports
   'GET /api/imports': () => importsList(),
@@ -1754,7 +1818,7 @@ const server = http.createServer((req, res) => {
         const msg = /UNIQUE/.test(e.message) ? 'Ce nom existe déjà' : e.message;
         console.log(`[ERREUR] ${req.method} ${url.pathname} -> ${e.message}\n         données reçues : ${body.slice(0, 300)}`);
         res.writeHead(400, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: msg }));
+        res.end(JSON.stringify({ error: msg, restart: !!e.restart })); // restart : l'aperçu n'est plus valable (choisir à nouveau le fichier)
       }
     });
     return;

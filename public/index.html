@@ -843,6 +843,13 @@
     <button type="button" class="btn" id="retGo">Retirer</button>
   </div>
 </dialog>
+<dialog id="msgDlg">
+  <h2 id="msgTitle"></h2>
+  <div id="msgBody" style="width:min(560px,86vw);max-height:60vh;overflow:auto;font-size:14px"></div>
+  <div class="row" style="margin-top:14px;justify-content:flex-end">
+    <button type="button" class="btn" id="msgOk">OK</button>
+  </div>
+</dialog>
 <dialog id="undoDlg">
   <h2>Annuler cet import ?</h2>
   <div id="undoBody" style="width:min(620px,88vw);max-height:60vh;overflow:auto;font-size:14px"></div>
@@ -868,9 +875,22 @@ async function api(path, body) {
       ? `Le serveur ne connaît pas l'action ${path} : il tourne encore avec une ancienne version. Arrête-le (Ctrl+C), vérifie que server.js est à jour, puis relance « node server.js ».`
       : `Réponse inattendue du serveur (${r.status}) pour ${path}`);
   }
-  if (!r.ok) throw new Error(j.error || 'Erreur');
+  // server : le serveur a répondu (sinon : connexion coupée, on ne sait pas si c'est enregistré) ;
+  // restart : rien n'a été enregistré et l'aperçu n'est plus valable, il faut choisir à nouveau le fichier
+  if (!r.ok) throw Object.assign(new Error(j.error || 'Erreur'), { server: true, restart: !!j.restart });
   return j;
 }
+// Message à accepter (bouton OK) avant de continuer : erreurs d'enregistrement, import terminé avec des lignes ignorées
+function msgBox(title, html) {
+  $('#msgTitle').textContent = title; $('#msgBody').innerHTML = html;
+  $('#msgDlg').showModal(); $('#msgOk').focus();
+  return new Promise((ok) => $('#msgDlg').addEventListener('close', ok, { once: true }));
+}
+$('#msgOk').onclick = () => $('#msgDlg').close();
+// Échec d'un enregistrement : ce qu'il faut savoir avant de recommencer
+const failHtml = (err, what) => `<p><b>${esc(err.message)}</b></p>` + (err.server
+  ? `<p>Rien n'a été enregistré. Pour recommencer, choisis à nouveau ${what} : l'aperçu sera refait à partir du planning tel qu'il est maintenant.</p>`
+  : `<p>La connexion au serveur a été coupée : impossible de savoir si c'est enregistré. Regarde d'abord dans <b>Contrôle → Journal</b> avant de recommencer.</p>`);
 function toast(msg, err, undo) {
   const t = $('#toast'); t.textContent = msg; t.className = 'toast' + (err ? ' err' : ''); t.style.display = 'flex';
   // bouton « Annuler » : le message reste plus longtemps pour laisser le temps de rattraper un mauvais clic
@@ -2242,11 +2262,14 @@ $('#evSave').onclick = async () => {
   const body = evPayload();
   const ev = EV.id ? PL.events.find((x) => x.id === EV.id) : null;
   if (ev && readyStep(ev, body)) return;
+  if ($('#evSave').disabled) return;
+  $('#evSave').disabled = true; // un clic = un envoi (un double-clic ne crée pas deux fois la case)
   try {
     const r = await api('/api/planning/event', body);
     setPL(r);
     $('#evDlg').close(); renderPlanning(); toast('Planning enregistré ✔');
   } catch (err) { $('#evErr').textContent = err.message; }
+  finally { $('#evSave').disabled = false; }
 };
 // 2e étape avant d'enregistrer (fenêtre Modifier ou menu de la case) → true si une fenêtre s'est ouverte :
 // « Prêt » sur une case avec une offre et un montage / démontage pas encore validé → le matériel ;
@@ -2828,20 +2851,28 @@ async function submitPhase(move) {
     toast(`${PH.phase} validé ✔${r.moved ? ` — ${r.moved} pièce${r.moved > 1 ? 's' : ''} déplacée${r.moved > 1 ? 's' : ''}` : ''}${left.length ? ` (${left[0].toLowerCase()} encore à faire)` : ''}`);
   } catch (err) { $('#phErr').textContent = err.message; }
 }
-$('#phGo').onclick = () => (PH.mode === 'undo' ? submitUndo(true) : submitPhase(true));
-$('#phNoMove').onclick = () => (PH.mode === 'undo' ? submitUndo(false) : submitPhase(false));
+// un clic = un envoi : boutons grisés tant que le serveur n'a pas répondu (le matériel n'est déplacé qu'une fois)
+async function phSubmit(move) {
+  if ($('#phGo').disabled) return;
+  $('#phGo').disabled = $('#phNoMove').disabled = true;
+  try { await (PH.mode === 'undo' ? submitUndo(move) : submitPhase(move)); } finally { $('#phGo').disabled = $('#phNoMove').disabled = false; }
+}
+$('#phGo').onclick = () => phSubmit(true);
+$('#phNoMove').onclick = () => phSubmit(false);
 
 // ----- Import du BEO Book (PDF) : lecture, aperçu, puis création des événements
 const PDFI = { file: null, data: null, sel: new Set(), rm: new Set(), kind: 'book' };
+// fenêtre vide : il faut (re)choisir le fichier
+function pdfReset() {
+  PDFI.file = null; PDFI.data = null; $('#pdfFile').value = ''; $('#pdfErr').textContent = '';
+  $('#pdfBody').innerHTML = `<p class="muted">Choisis un PDF : le <b>BEO Book</b> complet de la semaine, ou <b>un ou plusieurs BEO</b> isolés (une société, une journée).
+    L'application le compare au planning et te montre <b>tout ce qui change</b> : <b>rien n'est modifié tant que tu n'as pas validé</b>.
+    Le PDF est ensuite archivé dans le dossier de sa semaine, en ne gardant que la dernière version
+    (un BEO isolé ne remplace jamais le BEO Book, seulement l'ancienne version de ce même BEO).</p>`;
+  $('#pdfGo').disabled = true; $('#pdfGo').textContent = 'Importer'; $('#pdfCount').textContent = '';
+}
 $('#plSource').addEventListener('click', (e) => {
-  if (e.target.closest('#plPdf')) {
-    PDFI.file = null; PDFI.data = null; $('#pdfFile').value = ''; $('#pdfErr').textContent = '';
-    $('#pdfBody').innerHTML = `<p class="muted">Choisis un PDF : le <b>BEO Book</b> complet de la semaine, ou <b>un ou plusieurs BEO</b> isolés (une société, une journée).
-      L'application le compare au planning et te montre <b>tout ce qui change</b> : <b>rien n'est modifié tant que tu n'as pas validé</b>.
-      Le PDF est ensuite archivé dans le dossier de sa semaine, en ne gardant que la dernière version
-      (un BEO isolé ne remplace jamais le BEO Book, seulement l'ancienne version de ce même BEO).</p>`;
-    $('#pdfGo').disabled = true; $('#pdfCount').textContent = ''; $('#pdfDlg').showModal();
-  }
+  if (e.target.closest('#plPdf')) { pdfReset(); $('#pdfDlg').showModal(); }
 });
 $('#pdfClose').onclick = () => $('#pdfDlg').close();
 
@@ -2982,17 +3013,27 @@ $('#pdfGo').onclick = async () => {
   const d = PDFI.data; if (!d) return;
   $('#pdfErr').textContent = '';
   const events = d.events.filter((e) => PDFI.sel.has(e.i)).map((e) => ({ date: e.date, room_ids: e.room_ids, start: e.start, end: e.end, client: e.client, detail: e.detail, color: e.color, info: e.info, absorb: e.absorb, replace_id: e.state === 'differs' || e.state === 'info' ? e.existing_id : null, info_only: e.state === 'info' }));
+  // un aperçu ne s'envoie qu'une fois : bouton bloqué dès le clic, et après une erreur il faut choisir à nouveau le fichier
+  PDFI.data = null; $('#pdfGo').disabled = true; $('#pdfGo').textContent = 'Enregistrement…';
+  let r;
   try {
-    const r = await api('/api/planning/pdf/import', { events, remove_ids: [...PDFI.rm], token: d.token, filename: d.filename, from: d.from, to: d.to,
+    r = await api('/api/planning/pdf/import', { events, remove_ids: [...PDFI.rm], token: d.token, filename: d.filename, from: d.from, to: d.to,
       kind: PDFI.kind, beos: d.beoList.map((b) => String(b.number)) });
-    setPL(r);
-    const td = isoToday();
-    if (d.from) PL.week = weekStart(d.from <= td && td <= d.to ? td : d.from);
-    renderPlanning();
-    if (r.skipped.length) { $('#pdfErr').textContent = `${r.added + r.updated} importés, ${r.skipped.length} ignorés : ${r.skipped.slice(0, 3).join(' ; ')}`; return; }
-    const parts = [r.added && `${r.added} ajouté${r.added > 1 ? 's' : ''}`, r.updated && `${r.updated} mis à jour`, r.removed && `${r.removed} retiré${r.removed > 1 ? 's' : ''}`].filter(Boolean);
-    $('#pdfDlg').close(); toast(`${PDFI.kind === 'book' ? 'BEO Book' : 'BEO'} ${r.archived ? 'archivé' : 'importé'} ✔${parts.length ? ' — ' + parts.join(', ') : ''} · noté dans Contrôle → Journal`);
-  } catch (err) { $('#pdfErr').textContent = err.message; }
+  } catch (err) {
+    pdfReset();
+    return msgBox(`${PDFI.kind === 'book' ? 'Le BEO Book' : 'Le BEO'} n'a pas été enregistré`, failHtml(err, 'le fichier PDF'));
+  }
+  $('#pdfDlg').close();
+  setPL(r);
+  const td = isoToday();
+  if (d.from) PL.week = weekStart(d.from <= td && td <= d.to ? td : d.from);
+  renderPlanning();
+  const parts = [r.added && `${r.added} ajouté${r.added > 1 ? 's' : ''}`, r.updated && `${r.updated} mis à jour`, r.removed && `${r.removed} retiré${r.removed > 1 ? 's' : ''}`].filter(Boolean);
+  const done = `${PDFI.kind === 'book' ? 'BEO Book' : 'BEO'} ${r.archived ? 'archivé' : 'importé'} ✔${parts.length ? ' — ' + parts.join(', ') : ''} · noté dans Contrôle → Journal`;
+  if (!r.skipped.length) return toast(done);
+  const n = r.skipped.length, s = n > 1 ? 's' : '';
+  msgBox(`${n} ligne${s} du BEO ignorée${s}`, `<p>${esc(done)}</p><p>${n > 1 ? 'Ces lignes n\'ont' : 'Cette ligne n\'a'} <b>pas</b> été ajoutée${s} au planning : ajoute-${n > 1 ? 'les' : 'la'} à la main
+    (ou corrige le BEO et réimporte-le : ce qui est déjà importé ne sera pas recréé).</p><ul>${r.skipped.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>`);
 };
 
 // ----- Fiches techniques (offres) : lecture du PDF, vérification, enregistrement
@@ -3148,8 +3189,9 @@ $('#ofBody').addEventListener('change', (e) => {
 });
 
 $('#ofSave').onclick = async () => {
-  const d = OF.data; if (!d) return;
+  const d = OF.data; if (!d || $('#ofSave').disabled) return;
   $('#ofErr').textContent = '';
+  $('#ofSave').disabled = true; // un clic = un envoi
   try {
     // retient les associations « nom de salle de la fiche » → salle(s) de l'application (aussi utilisées pour le BEO Book)
     for (const i of OF.picked) { const r = d.rooms[i]; if (r.name && r.room_ids.length) await api('/api/planning/pdf/mapping', { name: r.name, room_ids: r.room_ids }); }
@@ -3163,7 +3205,11 @@ $('#ofSave').onclick = async () => {
     OF.cell = null;
     $('#ofDlg').close(); renderPlanning();
     toast(`Offre enregistrée ✔${first ? ` — montage le ${dayLabel(first)}` : ''} · noté dans Contrôle → Journal`);
-  } catch (err) { $('#ofErr').textContent = err.message; }
+  } catch (err) {
+    // simple oubli dans l'aperçu (date, salle…) : à corriger puis réessayer ; sinon l'aperçu n'est plus valable
+    if (err.server && !err.restart) $('#ofErr').textContent = err.message;
+    else { $('#ofFile').value = ''; renderOfList(); await msgBox('La fiche technique n\'a pas été enregistrée', failHtml(err, 'le fichier PDF de la fiche')); }
+  } finally { $('#ofSave').disabled = false; }
 };
 
 // Plusieurs postes : l'onglet se met à jour quand quelqu'un d'autre modifie le planning
