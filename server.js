@@ -217,6 +217,37 @@ function roomNotesList() {
   return db.prepare('SELECT * FROM room_notes WHERE removed_ts IS NULL ORDER BY id').all().map((n) => ({ ...n, room_ids: JSON.parse(n.room_ids) }));
 }
 
+// Matériel des sociétés externes (CAS…) d'une fiche technique, dans les salles :
+// - « installé par nous » (managed, coché à l'import de la fiche) : matériel prêté que nous installons nous-mêmes →
+//   étapes Montage / Démontage comme notre matériel ; installé tant que son démontage n'est pas validé (offer_moves.external)
+// - le reste : installé par la société elle-même → rien à valider, affiché dans la salle du montage au démontage de la fiche
+//   (« Tout démonter » dans l'onglet Salles le retire plus tôt : meta external_cleared)
+// Les validations d'avant cette distinction (sans « managed ») ne comptent plus : ce matériel suit les dates de sa fiche.
+const extKey = (offerId, roomName) => `${offerId}|${roomName}`;
+function todayIso() { const d = new Date(); return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); }
+// matériel prêté encore installé : dernière validation (montage / démontage) par offre + salle de la fiche
+function managedInstalled(moves) {
+  const last = new Map();
+  for (const m of moves) for (const x of m.external) if (x.managed) last.set(extKey(x.offer_id, x.room_name), m);
+  const out = [];
+  for (const [k, m] of last) if (m.phase === 'Montage') for (const x of m.external) if (x.managed && extKey(x.offer_id, x.room_name) === k) out.push(x);
+  return out;
+}
+function externalList(offers, moves) {
+  const day = todayIso(), cleared = metaJson('external_cleared');
+  const clientOf = new Map(offers.map((o) => [o.id, o.client]));
+  const out = managedInstalled(moves).map((x) => ({ ...x, client: clientOf.get(x.offer_id) || '', managed: true }));
+  for (const o of offers) for (const r of o.rooms) {
+    if (r.skip || !r.room_ids.length || cleared[extKey(o.id, r.name)]) continue;
+    const from = r.setup || r.show_from, to = r.demontage || r.show_to || r.show_from || from;
+    if (!from || day < from || day > to) continue;
+    for (const it of r.items || []) if (it.kind === 'externe' && !it.managed) {
+      out.push({ qty: it.qty, name: it.name, supplier: it.supplier, offer_id: o.id, room_name: r.name, room_ids: r.room_ids, client: o.client, managed: false, from, to });
+    }
+  }
+  return out;
+}
+
 // version : change à chaque modification du planning (les autres postes se mettent à jour)
 function beoStatus() {
   return { version: Number(metaGet('beo_version') || 0) };
@@ -263,7 +294,8 @@ function planningData() {
       info: r.info ? JSON.parse(r.info) : null, done: JSON.parse(r.done || '[]'),
     };
   });
-  return { events, offers: offersList(), offerMoves: offerMovesList(), notes: roomNotesList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
+  const offers = offersList(), offerMoves = offerMovesList();
+  return { events, offers, offerMoves, external: externalList(offers, offerMoves), notes: roomNotesList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
 }
 
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -553,6 +585,10 @@ function offersList() {
   }));
 }
 
+// « managed » : matériel d'une société externe que nous installons nous-mêmes (prêté) — seulement sur le matériel externe
+const managedKey = (room, i) => [room, i.name, i.supplier].map((s) => beopdf.nz(s)).join('|');
+const cleanItem = (it) => { const { managed, ...x } = it || {}; return x.kind === 'externe' && managed ? { ...x, managed: true } : x; };
+
 // Lecture d'une fiche envoyée : on garde le PDF en attente (tmp-…) jusqu'à la validation
 function previewOffer(buf, filename) {
   if (buf.subarray(0, 5).toString() !== '%PDF-') throw new Error("Ce fichier n'est pas un PDF");
@@ -572,8 +608,11 @@ function previewOffer(buf, filename) {
   // même client et même salle/jour de show qu'une offre déjà enregistrée → c'est probablement une nouvelle version
   const k = (n, d) => `${beopdf.nz(n)}|${d}`;
   const mine = new Set(rooms.map((r) => k(r.name, r.show_from)));
-  const replaces = offersList().filter((o) => beopdf.nz(o.client) === beopdf.nz(parsed.client) && o.rooms.some((r) => mine.has(k(r.name, r.show_from))))
-    .map((o) => ({ id: o.id, version: o.version, ts: o.ts, filename: o.filename }));
+  const older = offersList().filter((o) => beopdf.nz(o.client) === beopdf.nz(parsed.client) && o.rooms.some((r) => mine.has(k(r.name, r.show_from))));
+  const replaces = older.map((o) => ({ id: o.id, version: o.version, ts: o.ts, filename: o.filename }));
+  // matériel externe coché « installé par nous » dans la version remplacée : coché de nouveau (modifiable dans l'aperçu)
+  const was = new Set(older.flatMap((o) => o.rooms.flatMap((r) => (r.items || []).filter((i) => i.managed).map((i) => managedKey(r.name, i)))));
+  for (const r of rooms) for (const i of r.items || []) if (i.kind === 'externe' && was.has(managedKey(r.name, i))) i.managed = true;
   return { token, filename, manual: false, ...parsed, rooms, replaces };
 }
 
@@ -665,7 +704,7 @@ function saveOffer(b, j) {
     show_from: r.show_from || null, show_to: r.show_to || r.show_from || null, show_raw: r.show_raw || '',
     demontage: r.demontage || null,
     room_ids: [...new Set((r.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id)),
-    items: Array.isArray(r.items) ? r.items : [], skip: !!r.skip, // skip : salle hors application (ex. « Networking area »), pas affichée dans la grille
+    items: (Array.isArray(r.items) ? r.items : []).map(cleanItem), skip: !!r.skip, // skip : salle hors application (ex. « Networking area »), pas affichée dans la grille
   }));
   if (!rooms.length) throw new Error('Aucune salle dans cette offre');
   for (const r of rooms) {
@@ -699,7 +738,8 @@ function saveOffer(b, j) {
 
 // Modifier une offre enregistrée depuis une case du planning : nom affiché, société, salles d'une partie de la fiche
 // (retirée de la case → « hors grille » si plus aucune salle ; ajoutée à une case → salles de la case).
-// Les étiquettes Montage / Show / Démontage sont recalculées. b = { id, client?, label?, rooms?: [{ index, room_ids }] }
+// Les étiquettes Montage / Show / Démontage sont recalculées. b = { id, client?, label?, rooms?: [{ index, room_ids }],
+// managed?: [{ index, items: [n° des lignes de matériel externe installées par nous] }] }
 function updateOffer(b) {
   const o = db.prepare('SELECT * FROM offers WHERE id=?').get(Number(b.id));
   if (!o) throw new Error('Offre introuvable (supprimée ?)');
@@ -713,6 +753,13 @@ function updateOffer(b) {
     if (!r) throw new Error('Salle de la fiche introuvable');
     r.room_ids = [...new Set((ch.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id));
     r.skip = !r.room_ids.length; // plus de salle : la fiche reste dans la liste des offres, sans case dans la grille
+  }
+  // matériel externe installé par nous (prêté) : vaut pour les prochaines validations, ce qui est déjà validé ne bouge pas
+  for (const ch of Array.isArray(b.managed) ? b.managed : []) {
+    const r = rooms[Number(ch.index)];
+    if (!r) throw new Error('Salle de la fiche introuvable');
+    const on = new Set((ch.items || []).map(Number));
+    (r.items || []).forEach((it, i) => { if (it.kind !== 'externe') return; if (on.has(i)) it.managed = true; else delete it.managed; });
   }
   const relink = changes.length > 0 || client !== o.client;
   // matériel déjà monté / démonté avec cette fiche : ses cases ne bougent plus (sinon l'historique ne suit plus)
@@ -821,9 +868,10 @@ function validatePhase(b) {
       for (const l of g) { moveOne({ item_id: l.item_id, from: l.from, to: l.to, qty: l.qty, note: `${phase} ${rooms} — ${ev.client}`, batch }); moved += l.qty; }
     }
     metaSet('offer_item_map', JSON.stringify(itemMap));
+    // matériel prêté par une société externe, installé / démonté par nous (pas de stock, mais noté dans la salle)
     const external = (Array.isArray(b.external) ? b.external : []).filter((x) => Number(x.qty) > 0 && String(x.name || '').trim()).map((x) => ({
       qty: Number(x.qty), name: String(x.name).trim(), supplier: String(x.supplier || '').trim(), offer_id: Number(x.offer_id) || null,
-      room_name: x.room_name || '', room_ids: (x.room_ids || []).map(Number),
+      room_name: x.room_name || '', room_ids: (x.room_ids || []).map(Number), managed: true,
     }));
     db.prepare('INSERT INTO offer_moves (offer_id, room_name, event_id, phase, lines, external) VALUES (?,?,?,?,?,?)')
       .run(Number(b.offer_id) || done[0]?.offer_id || external[0]?.offer_id || null, b.room_name || done[0]?.room_name || external[0]?.room_name || '', id, phase, JSON.stringify(done), JSON.stringify(external));
@@ -857,6 +905,58 @@ function undoPhase(b) {
     bumpPlanning();
   });
   return { moved, ...planningData() };
+}
+
+// « Tout démonter » (onglet Salles) : la salle est vidée en une fois. Notre matériel revient au stock, le matériel prêté
+// (installé par nous) et le hors stock sont notés démontés, le matériel installé par une société externe n'est plus affiché,
+// et les démontages du planning cochés sont validés (sans rien déplacer de plus).
+// b = { room_ids, lines: [{ item_id, qty, from, to }], managed: [{ offer_id, room_name }], hide: [{ offer_id, room_name }], notes: [id], events: [id] }
+function clearRooms(b) {
+  const ids = [...new Set((b.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id));
+  if (!ids.length) throw new Error('Salle introuvable');
+  const nameOf = new Map(db.prepare('SELECT id, name FROM locations').all().map((l) => [l.id, l.name]));
+  const label = roomsLabel(ids, nameOf);
+  const kind = (id) => db.prepare('SELECT kind FROM locations WHERE id=?').get(id)?.kind;
+  const keys = (list) => new Set((Array.isArray(list) ? list : []).map((x) => extKey(Number(x.offer_id) || null, String(x.room_name ?? ''))));
+  let moved = 0, validated = 0;
+  inTransaction(() => {
+    const batch = crypto.randomUUID(); // un seul déplacement dans l'historique
+    for (const l of (Array.isArray(b.lines) ? b.lines : []).filter((x) => Number(x.qty) > 0)) {
+      const from = Number(l.from), to = Number(l.to);
+      if (!ids.includes(from)) throw new Error(`Le matériel doit venir de ${label}`);
+      if (kind(to) !== 'stock') throw new Error('Le matériel démonté revient dans un stock');
+      moveOne({ item_id: Number(l.item_id), from, to, qty: Number(l.qty), note: `Démontage ${label} (tout démonter)`, batch });
+      moved += Number(l.qty);
+    }
+    // matériel prêté : un démontage noté comme ceux du planning, sans case du planning
+    const lent = keys(b.managed);
+    const gone = managedInstalled(offerMovesList()).filter((x) => lent.has(extKey(x.offer_id, x.room_name)) && x.room_ids.some((id) => ids.includes(id)));
+    if (gone.length) db.prepare("INSERT INTO offer_moves (offer_id, room_name, event_id, phase, lines, external) VALUES (?, ?, NULL, 'Démontage', '[]', ?)")
+      .run(gone[0].offer_id, gone[0].room_name, JSON.stringify(gone));
+    // matériel installé par une société externe : plus affiché dans la salle (même si le démontage de sa fiche est plus tard)
+    const hide = keys(b.hide);
+    if (hide.size) {
+      const cleared = metaJson('external_cleared'), ts = new Date().toISOString();
+      for (const k of hide) cleared[k] = ts;
+      metaSet('external_cleared', JSON.stringify(cleared));
+    }
+    for (const id of (Array.isArray(b.notes) ? b.notes : []).map(Number)) {
+      const n = db.prepare('SELECT room_ids FROM room_notes WHERE id=? AND removed_ts IS NULL').get(id);
+      if (n && JSON.parse(n.room_ids).some((x) => ids.includes(x))) db.prepare("UPDATE room_notes SET removed_ts=datetime('now','localtime') WHERE id=?").run(id);
+    }
+    // démontages du planning : validés ; la case devient verte si toutes ses étapes sont faites
+    const evs = new Map(planningData().events.map((e) => [e.id, e]));
+    for (const id of (Array.isArray(b.events) ? b.events : []).map(Number)) {
+      const e = evs.get(id);
+      if (!e || !e.tags.includes('Démontage') || e.done.includes('Démontage') || !e.room_ids.some((x) => ids.includes(x))) continue;
+      const done = [...e.done, 'Démontage'];
+      const all = e.tags.filter((t) => PHASES.includes(t)).every((t) => done.includes(t));
+      db.prepare('UPDATE planning_events SET done=?, color=? WHERE id=?').run(JSON.stringify(done), all ? 'green' : e.color, id);
+      validated++;
+    }
+    bumpPlanning();
+  });
+  return { moved, validated, ...planningData() };
 }
 
 // Catégories : "micro", "Micro", "MICROS", " micros " → la catégorie existante la plus ancienne ("Micros")
@@ -1170,10 +1270,13 @@ function checksList() {
     add('warn', 'beo_offer', list.map((x) => `${x.id}:${x.detail}`).join(','), { date: dates[0], event_id: e.id, title: 'Le BEO renvoie à une fiche technique non importée',
       detail: `${e.client} — ${rn(e.room_ids)}, le ${dates.map(dmy).join(', ')} : « ${[...new Set(list.map((x) => x.detail))].join(' / ')} »` });
   }
-  // 6. montage / démontage d'une fiche passé mais pas validé (le stock de l'app n'a pas bougé)
+  // 6. montage / démontage d'une fiche passé mais pas validé (le stock de l'app n'a pas bougé) — sauf si la fiche n'a
+  //    rien pour nous (tout est installé par une société externe : rien à valider)
+  const forUs = (e, p) => (linked.get(e.id) || []).filter((l) => l.tag === p).some((l) => jsonOr(offerRows.find((o) => o.id === l.offer)?.rooms, [])
+    .some((r) => (r.room_ids || []).some((id) => e.room_ids.includes(id)) && (!(r.items || []).length || r.items.some((i) => i.kind === 'dolce' || i.managed))));
   for (const e of evs) {
     if (!linked.has(e.id) || e.date >= today || e.date < addDaysIso(today, -14)) continue;
-    for (const p of PHASES) if (e.tags.includes(p) && !e.done.includes(p)) {
+    for (const p of PHASES) if (e.tags.includes(p) && !e.done.includes(p) && forUs(e, p)) {
       add('warn', 'phase', `${e.id}:${p}`, { date: e.date, event_id: e.id, title: `${p} pas validé`,
         detail: `${e.client} — ${rn(e.room_ids)}, ${dmy(e.date)} : ${p === 'Montage' ? 'le matériel Dolce n\'a pas été sorti du stock dans l\'app' : 'le matériel est toujours compté dans la salle'}` });
     }
@@ -1183,14 +1286,12 @@ function checksList() {
   for (const s of db.prepare("SELECT s.location_id, s.qty, i.name FROM stock s JOIN items i ON i.id=s.item_id JOIN locations l ON l.id=s.location_id WHERE l.kind='salle'").all()) {
     (inRoom.get(s.location_id) || inRoom.set(s.location_id, []).get(s.location_id)).push(`${s.qty} × ${s.name}`);
   }
-  const lastMove = new Map(); // offre + salle → dernière validation (montage / démontage) du matériel externe
-  for (const m of pd.offerMoves) for (const x of m.external) for (const id of x.room_ids || []) lastMove.set(`${x.offer_id}|${x.room_name}|${id}`, { phase: m.phase, x });
-  // matériel externe d'une salle réunie (Cherry 1 + 2 + 3) : signalé une fois, dans sa première partie
+  // matériel prêté par une société externe et installé par nous (le reste, c'est la société qui le démonte) :
+  // signalé une fois, dans la première partie d'une salle réunie (Cherry 1 + 2 + 3)
   const label = (ids) => roomsLabel(ids, new Map([...names].map(([id, l]) => [id, l.name])));
-  for (const [k, v] of lastMove) if (v.phase === 'Montage') {
-    const id = Number(k.split('|')[2]);
-    if (v.x.room_ids?.length > 1 && id !== v.x.room_ids[0]) continue;
-    (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`matériel ${v.x.supplier || 'externe'}${v.x.room_ids?.length > 1 ? ` (${label(v.x.room_ids)})` : ''}`);
+  for (const x of pd.external.filter((y) => y.managed && y.room_ids.length)) {
+    const id = x.room_ids[0];
+    (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`matériel prêté ${x.supplier || 'externe'}${x.room_ids.length > 1 ? ` (${label(x.room_ids)})` : ''}`);
   }
   // matériel hors stock (notes) : compté une fois, dans la première partie d'une salle réunie
   for (const n of pd.notes) { const id = n.room_ids[0]; (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`${n.qty} × ${n.name} (hors stock${n.room_ids.length > 1 ? ', ' + label(n.room_ids) : ''})`); }
@@ -1301,6 +1402,7 @@ const routes = {
   'GET /api/beo/archive': () => beoArchive(),
   'POST /api/planning/phase': (b) => validatePhase(b),
   'POST /api/planning/phase/undo': (b) => undoPhase(b),
+  'POST /api/rooms/clear': (b) => clearRooms(b),
   'POST /api/offers/save': (b) => {
     const label = `Fiche technique — ${String(b.client || '').trim()}${b.version ? ' ' + b.version : ''}`;
     return journaled('offre', b.filename, label, (j) => { saveOffer(b, j); return planningData(); });
@@ -1320,7 +1422,7 @@ const routes = {
   'POST /api/offers/update': (b) => {
     const o = db.prepare('SELECT client, version, filename FROM offers WHERE id=?').get(Number(b.id));
     if (!o) throw new Error('Offre introuvable (déjà supprimée ?)');
-    if (!(Array.isArray(b.rooms) && b.rooms.length) && (b.client === undefined || String(b.client).trim() === o.client)) return updateOffer(b);
+    if (!(Array.isArray(b.rooms) && b.rooms.length) && !(Array.isArray(b.managed) && b.managed.length) && (b.client === undefined || String(b.client).trim() === o.client)) return updateOffer(b);
     return journaled('offre-modif', o.filename, `Fiche technique modifiée — ${o.client}${o.version ? ' ' + o.version : ''}`, () => updateOffer(b));
   },
   // Matériel hors stock (note) : installé dans la salle dès l'ajout, retiré quand il est démonté

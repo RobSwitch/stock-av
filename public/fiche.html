@@ -149,13 +149,14 @@ function tasksOn(day) {
   return DATA.events.filter((e) => e.date <= day && day <= e.end_date && e.room_ids.length)
     .filter((e) => e.color === 'red' || (e.color !== 'green' && e.tags.some((t) => PHASES.includes(t) && !(e.done || []).includes(t))));
 }
-// fiche(s) technique(s) liée(s) : matériel Dolce à amener et sociétés externes
+// fiche(s) technique(s) liée(s) : matériel Dolce à amener (et matériel prêté que nous installons), sociétés externes
 function offerInfo(e) {
   const out = { dolce: [], ext: {} };
   for (const o of DATA.offers) for (const r of o.rooms) {
     if (!sameClient(e.client, o.client) || !r.room_ids.some((id) => e.room_ids.includes(id))) continue;
     for (const it of r.items || []) {
       if (it.kind === 'dolce') out.dolce.push(`${it.qty} × ${it.name}`);
+      else if (it.kind === 'externe' && it.managed) out.dolce.push(`${it.qty} × ${it.name} (prêt ${it.supplier})`);
       else if (it.kind === 'externe') out.ext[it.supplier] = (out.ext[it.supplier] || 0) + 1;
     }
   }
@@ -185,21 +186,17 @@ function taskHtml(e) {
     ${l2.length ? `<div class="l2">${l2.join(' · ')}</div>` : ''}</div></div>`;
 }
 
-// ---- Matériel actuellement en salle (hors équipement inclus) : venu du stock, ou installé par une société externe
+// ---- Matériel actuellement en salle, à démonter par nous (hors équipement inclus) : venu du stock, ou prêté par une
+// société externe et installé par nous (le matériel installé par la société elle-même, c'est elle qui le démonte)
 function stockIn(roomId) {
   return DATA.stock.filter((s) => s.location_id === roomId).map((s) => `${s.qty} × ${DATA.items.find((i) => i.id === s.item_id)?.name || '?'}`);
 }
-function externalIn(roomId) { // dernière validation (montage / démontage) de chaque offre + salle de la fiche
-  const last = new Map();
-  for (const m of DATA.offerMoves || []) for (const x of m.external || []) last.set(`${x.offer_id}|${x.room_name}`, m);
+function externalIn(roomId) {
   const out = {};
-  for (const [k, m] of last) {
-    if (m.phase !== 'Montage') continue;
-    // salle réunie (Coco 1 + 2 + 3) : compté une seule fois, dans sa première partie
-    for (const x of m.external) if (`${x.offer_id}|${x.room_name}` === k && x.room_ids[0] === roomId) {
-      const key = x.room_ids.length > 1 ? `${x.supplier} — ${roomsLabel(x.room_ids)}` : x.supplier;
-      out[key] = (out[key] || 0) + x.qty;
-    }
+  // salle réunie (Coco 1 + 2 + 3) : compté une seule fois, dans sa première partie
+  for (const x of (DATA.external || []).filter((y) => y.managed && y.room_ids[0] === roomId)) {
+    const key = x.room_ids.length > 1 ? `${x.supplier} — ${roomsLabel(x.room_ids)}` : x.supplier;
+    out[key] = (out[key] || 0) + x.qty;
   }
   return out; // { CAS: 12, 'CAS — Coco 1 + 2 + 3': 37, … }
 }
@@ -268,7 +265,7 @@ function roomRows(areas, day) {
         : groups.map((x) => {
           if (!x.stays) stats.mat++;
           const where = x.names.length < r.rooms.length ? ` <u>${esc(x.names.join(' + '))}</u>` : '';
-          const extTxt = Object.entries(x.ext).map(([s, n]) => `matériel ${s} (${n} élément${n > 1 ? 's' : ''})`).join(', ');
+          const extTxt = Object.entries(x.ext).map(([s, n]) => `matériel prêté ${s} (${n} pièce${n > 1 ? 's' : ''})`).join(', ');
           const hsTxt = x.hs.length ? `<i>hors stock :</i> ${esc(x.hs.join(', '))}` : '';
           return `<div class="task mat ${x.stays ? 'stays' : ''}"><span class="box"></span><div>${x.stays ? '<b>Peut rester</b> (même société demain)' : '<b>À démonter</b>'}${where} : ${[esc([...x.stock, extTxt].filter(Boolean).join(', ')), hsTxt].filter(Boolean).join(' · ')}</div></div>`;
         }).join('');

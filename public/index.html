@@ -189,6 +189,14 @@
   .hsin .hit { background:var(--hit); font-weight:600; border-radius:4px; }
   .hsin .dim { opacity:.5; }
   .eqin .part { font-size:11px; opacity:.8; }
+  /* matériel installé par une société externe : à titre d'info, plus discret que notre matériel */
+  .grid.rooms .card.extonly h3::after { content:"Société externe"; background:var(--blue-soft); color:var(--blue-ink); }
+  .grid.rooms .card.lentcard h3::after { content:"Prêté · installé par nous"; background:var(--orange-soft); color:var(--orange-ink); }
+  .legend .l-ext { background:var(--blue-soft); border:1px dashed var(--blue-ink); }
+  .extin.info { font-size:12.5px; color:var(--muted); }
+  .extin .sum { cursor:help; }
+  .grid.rooms td .pill { font-size:10px; margin-left:4px; vertical-align:1px; }
+  .pill.lent { background:var(--orange-soft); color:var(--orange-ink); }
 
   /* ---- Historique ---- */
   details.hist { background:var(--card); border:0; border-radius:12px; box-shadow:var(--shadow-sm), 0 0 0 1px var(--line); margin-bottom:8px; }
@@ -541,11 +549,13 @@
 
   <section id="tab-lieux" class="hidden">
     <div class="card row">
+      <div class="seg" id="lieuView" style="margin-bottom:2px"><button type="button" data-lv="nous">Notre matériel</button><button type="button" data-lv="ext" title="Matériel des sociétés externes (CAS…) actuellement dans les salles">Sociétés externes <span class="count" id="lieuExtN"></span></button></div>
       <label style="flex:1;min-width:240px">Rechercher un matériel<input id="lieuQ" placeholder="ex : micro HF, batterie, HDMI…" autocomplete="off"></label>
       <button class="btn ghost" id="lieuClear" style="display:none">✕ Effacer</button>
       <span class="muted" id="lieuSummary" style="padding-bottom:8px"></span>
     </div>
-    <div class="legend"><span><i class="l-full"></i>Du matériel est installé</span><span><i class="l-empty"></i>Rien d'installé</span></div>
+    <div class="legend" id="lieuLegend"><span><i class="l-full"></i>Notre matériel est installé</span><span><i class="l-ext"></i>Seulement du matériel d'une société externe</span><span><i class="l-empty"></i>Rien d'installé</span>
+      <span class="muted" style="margin-left:auto">Clique sur une salle : amener du matériel, tout démonter…</span></div>
     <div id="lieuxGrid"></div>
   </section>
 
@@ -783,6 +793,19 @@
     <button type="button" class="btn ghost" id="noteClose">Fermer</button>
   </div>
 </dialog>
+<dialog id="clrDlg">
+  <h2 id="clrTitle">Tout démonter</h2>
+  <div style="width:min(780px,calc(100vw - 90px))">
+    <p class="muted" style="margin:0">Tout ce qui est installé dans la salle, en une fois. Décoche ce qui reste en place.</p>
+    <div id="clrBody"></div>
+    <p class="warn" id="clrErr"></p>
+  </div>
+  <div class="row" style="margin-top:14px;align-items:center">
+    <span class="muted" id="clrSum" style="flex:1;font-size:13px"></span>
+    <button type="button" class="btn ghost" id="clrCancel">Annuler</button>
+    <button type="button" class="btn ok" id="clrGo">Tout démonter</button>
+  </div>
+</dialog>
 <dialog id="retireDlg">
   <h2>Retirer du matériel</h2>
   <p style="margin:0 0 6px"><b id="retName"></b></p>
@@ -936,20 +959,12 @@ const lieuOpen = {}; // sections repliées/dépliées par l'utilisateur (hors re
 // Équipement fixe (inclus) d'une salle
 const equipOf = (l) => { try { return JSON.parse(l.equipment || '[]'); } catch { return []; } };
 
-// Matériel externe actuellement installé : noté au montage d'une offre, retiré au démontage (room_ids : salles de la fiche)
-function externalAll() {
-  const last = new Map(); // dernière validation (montage ou démontage) par offre + salle de la fiche
-  for (const m of PL.offerMoves || []) for (const x of m.external || []) last.set(`${x.offer_id}|${x.room_name}`, m);
-  const out = [];
-  for (const [k, m] of last) {
-    if (m.phase !== 'Montage') continue;
-    const [oid, rn] = [Number(k.split('|')[0]), k.slice(k.indexOf('|') + 1)];
-    const client = PL.offers.find((o) => o.id === oid)?.client || '';
-    for (const x of m.external) if (x.offer_id === oid && x.room_name === rn) out.push({ ...x, client });
-  }
-  return out;
-}
-const externalIn = (roomId) => externalAll().filter((x) => x.room_ids.includes(roomId));
+// Matériel des sociétés externes dans les salles (calculé par le serveur, room_ids : salles de la fiche) :
+// managed = prêté et installé par nous (suit nos montages / démontages) ; sinon installé par la société elle-même,
+// affiché à titre d'info pendant les dates de sa fiche technique (rien à valider)
+const externalAll = () => PL.external || [];
+const lentIn = (ids) => externalAll().filter((x) => x.managed && x.room_ids.some((id) => ids.includes(id)));
+const lentTxt = (x) => `${x.qty} × ${x.name} (prêt ${x.supplier})`;
 
 // Salles réunies : parties qui partagent du matériel installé ensemble (société externe ou hors stock noté pour
 // « Redwood 1 + 2 ») → une seule carte dans l'onglet Salles, le matériel n'est pas répété dans chaque partie
@@ -966,8 +981,15 @@ function mergedRooms() {
   return of; // salle → toutes les parties de sa salle réunie
 }
 
+let lieuView = 'nous'; try { if (localStorage.getItem('lieuView') === 'ext') lieuView = 'ext'; } catch {}
 function renderLieux() {
   const q = norm($('#lieuQ').value);
+  const nExt = new Set(externalAll().map((x) => `${x.offer_id}|${x.room_name}`)).size;
+  document.querySelectorAll('#lieuView button').forEach((b) => b.classList.toggle('active', b.dataset.lv === lieuView));
+  $('#lieuExtN').textContent = nExt || '';
+  $('#lieuExtN').style.display = nExt ? '' : 'none';
+  $('#lieuLegend').style.display = lieuView === 'ext' ? 'none' : '';
+  if (lieuView === 'ext') return renderLieuxExt(q);
   const matches = (it) => !q || norm(it.name + ' ' + it.category).includes(q);
   let rooms = 0, pieces = 0;
   const merged = mergedRooms(), done = new Set();
@@ -985,8 +1007,9 @@ function renderLieux() {
       lines.forEach((x) => (x.hit = matches(x.i)));
       const seen = new Set();
       const ext = ext0.filter((x) => x.room_ids.some((id) => ids.includes(id)))
-        .filter((x) => { const k = `${x.offer_id}|${x.room_name}|${x.name}|${x.supplier}`; return !seen.has(k) && seen.add(k); })
+        .filter((x) => { const k = `${x.offer_id}|${x.room_name}|${x.name}|${x.supplier}|${x.managed}`; return !seen.has(k) && seen.add(k); })
         .map((x) => ({ ...x, hit: !q || norm(x.name + ' ' + x.supplier).includes(q) }));
+      const lent = ext.filter((x) => x.managed), info = ext.filter((x) => !x.managed); // prêté (à nous de le démonter) / installé par la société
       const hs = notesIn(ids).map((n) => ({ ...n, hit: !q || norm(n.name).includes(q) }));
       // équipement inclus : additionné sur les parties d'une salle réunie (3 parties × 1 projecteur → 3 × Projecteur)
       const eqm = new Map();
@@ -997,19 +1020,24 @@ function renderLieux() {
       const eq = [...eqm.values()].map((x) => ({ ...x, hit: !q || norm(x.name).includes(q) }));
       if (q && !lines.some((x) => x.hit) && !ext.some((x) => x.hit) && !eq.some((x) => x.hit) && !hs.some((x) => x.hit)) return ''; // recherche : on ne garde que les emplacements concernés
       if (q) { rooms++; pieces += lines.filter((x) => x.hit).reduce((a, x) => a + x.s.qty, 0) + ext.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0) + hs.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0); }
-      // 1) équipement inclus (fixe) — séparé du matériel installé : 2) depuis le stock, 3) par une société externe, 4) hors stock
+      // 1) notre matériel (du stock + prêté que nous avons installé), 2) hors stock, 3) installé par une société externe
+      // (à titre d'info, résumé), 4) équipement inclus (fixe)
+      const cls = (x) => (q ? (x.hit ? 'hit' : 'dim') : '');
       const eqHtml = eq.length ? `<div class="eqin"><div class="lbl">Équipement de la salle (inclus)</div>${eq.map((x) =>
-        `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}">${x.qty} × ${esc(x.name)}</div>`).join('')}</div>` : '';
-      const extHtml = ext.length ? `<div class="extin"><div class="lbl">Installé par une société externe</div>${ext.map((x) =>
-        `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}" title="${esc(x.client)}">${x.qty} × ${esc(x.name)} <span class="pill ext">${esc(x.supplier)}</span></div>`).join('')}</div>` : '';
+        `<div class="${cls(x)}">${x.qty} × ${esc(x.name)}</div>`).join('')}</div>` : '';
+      const ours = lines.map(({ s, i, hit }) => `<tr class="${cls({ hit })}"><td>${esc(i.name)}</td><td style="text-align:right"><b>${s.qty}</b></td></tr>`)
+        .concat(lent.map((x) => `<tr class="${cls(x)}" title="${esc(`Prêté par ${x.supplier}, installé par nous${x.client ? ' — ' + x.client : ''}`)}"><td>${esc(x.name)}<span class="pill lent">prêt ${esc(x.supplier)}</span></td><td style="text-align:right"><b>${x.qty}</b></td></tr>`));
+      const bySup = new Map();
+      for (const x of info) (bySup.get(x.supplier) || bySup.set(x.supplier, []).get(x.supplier)).push(x);
+      const infoHtml = info.length ? `<div class="extin info"><div class="lbl">Installé par une société externe · rien à faire</div>${[...bySup].map(([s, xs]) =>
+        q && xs.some((x) => x.hit) ? xs.filter((x) => x.hit).map((x) => `<div class="hit">${x.qty} × ${esc(x.name)} <span class="pill ext">${esc(s)}</span></div>`).join('')
+          : `<div class="sum ${q ? 'dim' : ''}" title="${esc(xs.map((x) => `${x.qty} × ${x.name}`).join('\n'))}"><span class="pill ext">${esc(s)}</span> ${xs.length} élément${xs.length > 1 ? 's' : ''} · jusqu'au ${esc(dayLabel(xs.map((x) => x.to).sort().pop()))}</div>`).join('')}</div>` : '';
       const hsHtml = hs.length ? `<div class="hsin"><div class="lbl">Hors stock</div>${hs.map((x) =>
-        `<div class="${q ? (x.hit ? 'hit' : 'dim') : ''}" title="${esc(`Ajouté le ${dayLabel(x.ts.slice(0, 10))}${x.client ? ' — ' + x.client : ''}`)}">${esc(noteTxt(x))}</div>`).join('')}</div>` : '';
-      const full = lines.length || ext.length || hs.length;
-      return `<div class="card ${full ? 'filled' : 'vide'} ${q ? 'found' : ''}" data-room="${ids[0]}" data-rooms="${ids.join(',')}" title="Clic : amener du matériel, vider la salle, matériel hors stock, équipement"><h3>${esc(ids.length > 1 ? roomsLabel(ids) : l.name)}</h3>` +
+        `<div class="${cls(x)}" title="${esc(`Ajouté le ${dayLabel(x.ts.slice(0, 10))}${x.client ? ' — ' + x.client : ''}`)}">${esc(noteTxt(x))}</div>`).join('')}</div>` : '';
+      const full = ours.length || hs.length;
+      return `<div class="card ${full ? 'filled' : info.length ? 'vide extonly' : 'vide'} ${q ? 'found' : ''}" data-room="${ids[0]}" data-rooms="${ids.join(',')}" title="Clic : amener du matériel, tout démonter, matériel hors stock, équipement"><h3>${esc(ids.length > 1 ? roomsLabel(ids) : l.name)}</h3>` +
         (ids.length > 1 ? `<div class="merged">Salle réunie : ${esc(ids.map(locName).join(' + '))}</div>` : '') +
-        (lines.length
-          ? `<div class="lbl stk">Installé depuis le stock</div><table><tbody>${lines.map(({ s, i, hit }) => `<tr class="${q ? (hit ? 'hit' : 'dim') : ''}"><td>${esc(i.name)}</td><td style="text-align:right"><b>${s.qty}</b></td></tr>`).join('')}</tbody></table>`
-          : '') + extHtml + hsHtml + eqHtml + '</div>';
+        (ours.length ? `<div class="lbl stk">Notre matériel</div><table><tbody>${ours.join('')}</tbody></table>` : '') + hsHtml + infoHtml + eqHtml + '</div>';
     }).filter(Boolean);
     if (q && !cards.length) return ''; // recherche : sections sans résultat masquées
     const open = q ? true : (lieuOpen[g.label] ?? true);
@@ -1021,6 +1049,36 @@ function renderLieux() {
     ? (rooms ? `${pieces} pièce${pieces > 1 ? 's' : ''} trouvée${pieces > 1 ? 's' : ''} dans ${rooms} emplacement${rooms > 1 ? 's' : ''}` : '')
     : '';
 }
+// Vue « Sociétés externes » : le matériel externe actuellement dans les salles, par société puis par salle de la fiche
+function renderLieuxExt(q) {
+  const bySup = new Map(); // société → salle de la fiche → matériel
+  for (const x of externalAll()) {
+    if (q && !norm(`${x.name} ${x.supplier} ${x.client} ${roomsLabel(x.room_ids)}`).includes(q)) continue;
+    const s = x.supplier || 'Externe', g = bySup.get(s) || bySup.set(s, new Map()).get(s);
+    const k = `${x.offer_id}|${x.room_name}|${x.managed}`;
+    (g.get(k) || g.set(k, { ...x, items: [] }).get(k)).items.push(x);
+  }
+  const rooms = new Set(); let pieces = 0;
+  const html = [...bySup].sort(([a], [b]) => a.localeCompare(b)).map(([s, g]) => {
+    const cards = [...g.values()].sort((a, b) => roomsLabel(a.room_ids).localeCompare(roomsLabel(b.room_ids), 'fr', { numeric: true })).map((x) => {
+      rooms.add(roomsLabel(x.room_ids)); pieces += x.items.reduce((a, i) => a + i.qty, 0); // salle réunie = une salle
+      const when = x.managed ? 'Prêté · à démonter par nous' : `Installé par ${s} · ${x.from === x.to ? dayLabel(x.from) : `du ${dayLabel(x.from)} au ${dayLabel(x.to)}`}`;
+      return `<div class="card ${x.managed ? 'filled lentcard' : 'vide extonly'}"><h3>${esc(roomsLabel(x.room_ids))}</h3>
+        <div class="merged">${esc(x.client)}${x.room_name && norm(x.room_name) !== norm(roomsLabel(x.room_ids)) ? ` · « ${esc(x.room_name)} » sur la fiche` : ''}</div>
+        <div class="extin"><div class="lbl">${esc(when)}</div>${x.items.map((i) => `<div>${i.qty} × ${esc(i.name)}</div>`).join('')}</div></div>`;
+    });
+    return `<details class="floor" open><summary>${esc(s)} <span class="count">${cards.length} salle${cards.length > 1 ? 's' : ''}</span></summary><div class="grid rooms">${cards.join('')}</div></details>`;
+  }).join('');
+  $('#lieuxGrid').innerHTML = html || (q ? emptyState('Rien trouvé', 'Aucun matériel externe ne correspond à cette recherche.')
+    : emptyState('Aucun matériel externe en ce moment', 'Le matériel des sociétés externes apparaît ici pendant les dates de leur fiche technique (du montage au démontage).'));
+  $('#lieuClear').style.display = q ? '' : 'none';
+  $('#lieuSummary').textContent = rooms.size ? `${pieces} pièce${pieces > 1 ? 's' : ''} dans ${rooms.size} salle${rooms.size > 1 ? 's' : ''}` : '';
+}
+$('#lieuView').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-lv]'); if (!b) return;
+  lieuView = b.dataset.lv; try { localStorage.setItem('lieuView', lieuView); } catch {}
+  renderLieux();
+});
 $('#lieuQ').addEventListener('input', renderLieux);
 
 // ---- Onglet "Stock" : le contenu de chaque stock, par catégorie (+ où se trouve le reste) ----
@@ -1088,11 +1146,13 @@ $('#lieuxGrid').addEventListener('click', (e) => {
   if (!roomMenu.hidden && Number(roomMenu.dataset.room) === id) { roomMenu.hidden = true; return; }
   const full = (x) => D.stock.some((s) => s.location_id === x);
   const one = ids.length === 1;
+  const anything = ids.some(full) || notesIn(ids).length || externalAll().some((x) => x.room_ids.some((r) => ids.includes(r)));
   roomMenu.dataset.room = id; roomMenu.dataset.rooms = ids.join(',');
-  // salle réunie : vider / équipement par partie ; le matériel hors stock vaut pour la salle réunie
+  // salle réunie : vider / équipement par partie ; le matériel hors stock et « tout démonter » valent pour la salle réunie
   roomMenu.innerHTML = `<div class="rmh">${esc(one ? locName(id) : roomsLabel(ids) + ' (salle réunie)')}</div>
     <button type="button" data-act="fill" data-id="${id}">＋ Amener du matériel du stock${one ? '' : ` (→ ${esc(locName(id))})`}</button>
-    ${ids.filter(full).map((x) => `<button type="button" data-act="empty" data-id="${x}">← Vider ${one ? 'la salle' : esc(locName(x))} vers le stock</button>`).join('')}
+    ${anything ? `<button type="button" data-act="clear">⤓ Tout démonter${one ? '' : ' (salle réunie)'}…</button>` : ''}
+    ${ids.filter(full).map((x) => `<button type="button" data-act="empty" data-id="${x}">← Vider ${one ? 'la salle' : esc(locName(x))} vers le stock (choix du matériel)</button>`).join('')}
     <button type="button" data-act="notes">🧰 Matériel hors stock…</button>
     ${ids.map((x) => `<button type="button" data-act="equip" data-id="${x}">✎ ${one ? 'Modifier l\'équipement inclus' : 'Équipement inclus — ' + esc(locName(x))}</button>`).join('')}`;
   roomMenu.hidden = false;
@@ -1106,6 +1166,7 @@ roomMenu.addEventListener('click', (e) => {
   const id = Number(b.dataset.id || roomMenu.dataset.room); roomMenu.hidden = true;
   if (b.dataset.act === 'fill') roomFill(id);
   else if (b.dataset.act === 'empty') roomEmpty(id);
+  else if (b.dataset.act === 'clear') openClear(roomMenu.dataset.rooms.split(',').map(Number));
   else if (b.dataset.act === 'notes') openNotes(roomMenu.dataset.rooms.split(',').map(Number));
   else openLocEdit(id);
 });
@@ -1631,10 +1692,10 @@ $('#retGo').onclick = async () => {
 
 // ---- Onglet "Planning BEO" : planning géré directement dans l'application ----
 let _v = 'grid', _dn = 'compact'; try { _v = localStorage.getItem('plView') || 'grid'; _dn = localStorage.getItem('plDensity') || 'compact'; } catch {}
-const PL = { events: [], offers: [], offerMoves: [], notes: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+const PL = { events: [], offers: [], offerMoves: [], external: [], notes: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
 // réponse du serveur (planningData) → état du planning
 function setPL(r) {
-  PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.notes = r.notes || []; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+  PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.external = r.external || []; PL.notes = r.notes || []; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
 }
 const PL_COLOR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -1706,6 +1767,8 @@ function planningSourceHtml() {
 
 function evCard(e) {
   const stuff = e.room_ids.flatMap((id) => { const l = roomStuff(id); return l.length ? [`${locName(id)} : ${l.join(', ')}`] : []; });
+  const lent = lentIn(e.room_ids);
+  if (lent.length) stuff.push(lent.map(lentTxt).join(', '));
   const hs = notesOn(e);
   if (hs.length) stuff.push(`hors stock : ${hs.map(noteTxt).join(', ')}`);
   const inst = e.room_ids.length
@@ -1772,7 +1835,7 @@ function avHtml(e) {
 }
 
 function gridCell(e, hit, extra = '') {
-  const stuff = e.room_ids.flatMap((id) => roomStuff(id));
+  const stuff = [...e.room_ids.flatMap((id) => roomStuff(id)), ...lentIn(e.room_ids).map(lentTxt)];
   const xtra = avExtra(e);
   const hs = notesOn(e).map(noteTxt);
   const tip = [e.client, e.detail, ...beoInfoLines(e), xtra.length ? 'Infos AV du BEO :\n   ' + xtra.join('\n   ') : '', stuff.length ? 'Dans la salle : ' + stuff.join(', ') : '',
@@ -1785,10 +1848,11 @@ function gridCell(e, hit, extra = '') {
 }
 
 // ---- Offres (fiches techniques) : affichées dans la salle, au jour du montage
+// dolce : notre matériel · man : prêté par une société externe, installé par nous · ext : installé par la société (nombre d'éléments)
 function offerParts(items) {
   const ext = {};
-  items.filter((i) => i.kind === 'externe').forEach((i) => { ext[i.supplier] = (ext[i.supplier] || 0) + 1; });
-  return { dolce: items.filter((i) => i.kind === 'dolce'), ext, inc: items.filter((i) => i.kind === 'inclus').length };
+  items.filter((i) => i.kind === 'externe' && !i.managed).forEach((i) => { ext[i.supplier] = (ext[i.supplier] || 0) + 1; });
+  return { dolce: items.filter((i) => i.kind === 'dolce'), man: items.filter((i) => i.kind === 'externe' && i.managed), ext, inc: items.filter((i) => i.kind === 'inclus').length };
 }
 function offerTip(o, r) {
   const p = offerParts(r.items || []);
@@ -1797,7 +1861,8 @@ function offerTip(o, r) {
     `Salle : ${r.name ? r.name + ' → ' : ''}${r.room_ids.map(locName).join(', ')}`,
     `Montage : ${dayLabel(r.setup)}${r.show_from ? ` · Show : ${r.show_raw || dayLabel(r.show_from)}` : ''}${r.demontage ? ` · Démontage : ${dayLabel(r.demontage)}` : ''}`,
     p.dolce.length ? 'À monter par nous (Dolce) :\n' + p.dolce.map((i) => `   ${i.qty} × ${i.name}`).join('\n') : '',
-    Object.keys(p.ext).length ? 'Externe : ' + Object.entries(p.ext).map(([s, n]) => `${s} (${n})`).join(', ') : '',
+    p.man.length ? 'Prêté, à installer par nous :\n' + p.man.map((i) => `   ${i.qty} × ${i.name} (${i.supplier})`).join('\n') : '',
+    Object.keys(p.ext).length ? 'Installé par la société externe : ' + Object.entries(p.ext).map(([s, n]) => `${s} (${n})`).join(', ') : '',
     p.inc ? `Inclus : ${p.inc} élément${p.inc > 1 ? 's' : ''}` : '',
     'Clique pour ouvrir le PDF',
   ].filter(Boolean).join('\n');
@@ -1956,7 +2021,7 @@ function renderPlanning() {
   const ofs = PL.offers.flatMap((o) => o.rooms.filter((r) => r.room_ids.length && offerPhases(r)[PL.day]).map((r) => ({ o, r, ph: offerPhases(r)[PL.day] })));
   const ofHtml = ofs.length ? `<div class="ofrday"><b>Fiches techniques ce jour-là</b>${ofs.map(({ o, r, ph }) => {
     const p = offerParts(r.items || []);
-    return `<div>${offerChip(o, r)} ${ph.map((t) => `<span class="tg ${tagClass(t)}">${t}</span>`).join('')} <b>${esc(o.client)}</b> · ${r.room_ids.map(locName).map(esc).join(', ')}${r.show_from ? ` <span class="muted">(show ${esc(r.show_raw || dayLabel(r.show_from))})</span>` : ''}${p.dolce.length && ph.includes('Montage') ? ` — <span class="pill dolce">Dolce</span> ${p.dolce.map((i) => `${i.qty} × ${esc(i.name)}`).join(', ')}` : ''}</div>`;
+    return `<div>${offerChip(o, r)} ${ph.map((t) => `<span class="tg ${tagClass(t)}">${t}</span>`).join('')} <b>${esc(o.client)}</b> · ${r.room_ids.map(locName).map(esc).join(', ')}${r.show_from ? ` <span class="muted">(show ${esc(r.show_raw || dayLabel(r.show_from))})</span>` : ''}${p.dolce.length && ph.includes('Montage') ? ` — <span class="pill dolce">Dolce</span> ${p.dolce.map((i) => `${i.qty} × ${esc(i.name)}`).join(', ')}` : ''}${p.man.length && ph.includes('Montage') ? ` — <span class="pill lent">prêté</span> ${p.man.map((i) => `${i.qty} × ${esc(i.name)} (${esc(i.supplier)})`).join(', ')}` : ''}</div>`;
   }).join('')}</div>` : '';
   $('#plBody').innerHTML = `<h2 class="plday">${dayLabel(PL.day, true)}</h2>` + ofHtml +
     (list.length ? dayBlock(list) : emptyState('Aucun événement ce jour-là', 'Rien de prévu dans les salles : profites-en pour ranger le stock !'));
@@ -2034,7 +2099,7 @@ function openEvent(ev, pre) {
   $('#evDel').style.display = ev ? '' : 'none'; $('#evDel').textContent = 'Supprimer';
   $('#evErr').textContent = '';
   // fiches techniques de la case et matériel hors stock de la salle
-  EVO.edit = null; EVO.confirm = null;
+  EVO.edit = null; EVO.confirm = null; EVO.man = null;
   $('#evNotes').innerHTML = '';
   renderEvOffers(); renderNotes($('#evNotes'), [...sel]);
   $('#evDlg').showModal();
@@ -2164,9 +2229,95 @@ function openNotes(ids) {
 }
 $('#noteClose').onclick = () => $('#noteDlg').close();
 
+// ----- « Tout démonter » une salle (onglet Salles) : notre matériel revient au stock (celui d'où il est parti au montage,
+// sinon le stock principal), le matériel prêté et le hors stock sont notés démontés, le matériel installé par une société
+// externe n'est plus affiché, et les démontages du planning pas encore validés dans ces salles sont validés
+const CLR = { ids: [], rows: [], lent: [], notes: [], info: [], evs: [] };
+function openClear(ids) {
+  const today = isoToday(), st = mainStock();
+  const origin = (item, room) => PL.offerMoves.filter((m) => m.phase === 'Montage').flatMap((m) => m.lines).filter((l) => l.item_id === item && l.to === room).map((l) => l.from).pop();
+  CLR.ids = ids;
+  CLR.rows = D.stock.filter((s) => ids.includes(s.location_id)).map((s) => {
+    const to = origin(s.item_id, s.location_id);
+    return { item: s.item_id, label: D.items.find((i) => i.id === s.item_id)?.name || '?', qty: s.qty, max: s.qty, from: s.location_id, to: stocks().some((x) => x.id === to) ? to : st?.id, on: true };
+  }).sort((a, b) => a.label.localeCompare(b.label) || locName(a.from).localeCompare(locName(b.from)));
+  // matériel externe : par fiche (offre + salle de la fiche)
+  const groups = (list) => {
+    const m = new Map();
+    for (const x of list) { const k = `${x.offer_id}|${x.room_name}`; (m.get(k) || m.set(k, { offer_id: x.offer_id, room_name: x.room_name, supplier: x.supplier, client: x.client, items: [], on: true }).get(k)).items.push(x); }
+    return [...m.values()];
+  };
+  const ext = externalAll().filter((x) => x.room_ids.some((id) => ids.includes(id)));
+  CLR.lent = groups(ext.filter((x) => x.managed));
+  CLR.info = groups(ext.filter((x) => !x.managed));
+  CLR.notes = notesIn(ids).map((n) => ({ ...n, on: true }));
+  // démontages du planning dans ces salles, aujourd'hui ou les 2 semaines passées, pas encore validés
+  CLR.evs = PL.events.filter((e) => e.room_ids.some((id) => ids.includes(id)) && e.tags.includes('Démontage') && !(e.done || []).includes('Démontage')
+    && e.date <= today && e.end_date >= addDays(today, -14)).sort((a, b) => b.date.localeCompare(a.date)).map((e) => ({ e, on: true }));
+  $('#clrTitle').textContent = `Tout démonter — ${roomsLabel(ids)}`;
+  $('#clrErr').textContent = '';
+  renderClear(); $('#clrDlg').showModal();
+}
+function renderClear() {
+  const sec = (title, sub, body) => `<div class="phgrp" style="margin-top:14px">${title} <span class="muted" style="font-weight:400;font-size:12px">${sub}</span></div>${body}`;
+  const tbl = (rows, head = '') => `<div class="pdfwrap" style="max-height:30vh"><table class="pdft ph">${head}<tbody>${rows.join('')}</tbody></table></div>`;
+  const chk = (k, i, on) => `<td style="width:28px"><input type="checkbox" data-clr="${k}|${i}" ${on ? 'checked' : ''}></td>`;
+  const tr = (x, cells) => `<tr class="${x.on ? '' : 'off'}">${cells}</tr>`;
+  const items = (g) => g.items.map((x) => `${x.qty} × ${esc(x.name)}`).join('<br>');
+  let h = '';
+  if (CLR.rows.length) h += sec('Notre matériel', '— revient au stock', tbl(CLR.rows.map((r, i) => tr(r, `${chk('row', i, r.on)}<td>${esc(r.label)}</td>
+    <td><input type="number" min="0" max="${r.max}" data-clr="qty|${i}" value="${r.qty}" style="width:64px"></td><td>${esc(locName(r.from))}</td>
+    <td><select data-clr="to|${i}">${locOptions(stocks().map((s) => s.id), r.to)}</select></td>`)),
+    '<thead><tr><th></th><th>Matériel</th><th>Qté</th><th>Depuis</th><th>Vers</th></tr></thead>'));
+  if (CLR.lent.length) h += sec('Matériel prêté, installé par nous', '— noté démonté (rien ne bouge dans le stock)',
+    tbl(CLR.lent.map((g, i) => tr(g, `${chk('lent', i, g.on)}<td>${items(g)}</td><td><span class="pill lent">prêt ${esc(g.supplier)}</span><br><span class="muted" style="font-size:12px">${esc(g.client)}</span></td>`))));
+  if (CLR.notes.length) h += sec('Hors stock', '— noté démonté',
+    tbl(CLR.notes.map((n, i) => tr(n, `${chk('note', i, n.on)}<td>${esc(noteTxt(n))}</td><td class="muted" style="font-size:12px">${esc(roomsLabel(n.room_ids))}${n.client ? ' · ' + esc(n.client) : ''}</td>`))));
+  if (CLR.info.length) h += sec('Installé par une société externe', '— c\'est elle qui le démonte : il n\'est simplement plus affiché dans la salle',
+    tbl(CLR.info.map((g, i) => tr(g, `${chk('info', i, g.on)}<td><span class="pill ext">${esc(g.supplier)}</span> ${g.items.length} élément${g.items.length > 1 ? 's' : ''}
+      <div class="muted" style="font-size:12px">${esc(g.items.map((x) => x.name).join(', '))}</div></td><td class="muted" style="font-size:12px">${esc(g.client)}</td>`))));
+  if (CLR.evs.length) h += sec('Planning', '— démontage pas encore validé dans ces cases',
+    tbl(CLR.evs.map((x, i) => tr(x, `${chk('ev', i, x.on)}<td>Valider le démontage : <b>${esc(x.e.client)}</b></td><td class="muted" style="font-size:12px">${esc(dayLabel(x.e.date))} · ${esc(roomsLabel(x.e.room_ids))}</td>`))));
+  $('#clrBody').innerHTML = h || '<p class="muted">Rien n\'est installé dans cette salle.</p>';
+  const n = CLR.rows.filter((r) => r.on && r.qty > 0).reduce((a, r) => a + Number(r.qty), 0);
+  const on = (list) => list.filter((x) => x.on).length;
+  const parts = [n && `${n} pièce${n > 1 ? 's' : ''} au stock`, on(CLR.lent) && 'matériel prêté démonté', on(CLR.notes) && `${on(CLR.notes)} hors stock`,
+    on(CLR.info) && 'matériel externe plus affiché', on(CLR.evs) && `${on(CLR.evs)} démontage${on(CLR.evs) > 1 ? 's' : ''} validé${on(CLR.evs) > 1 ? 's' : ''}`].filter(Boolean);
+  $('#clrSum').textContent = parts.length ? parts.join(' · ') : 'Rien de coché';
+  $('#clrGo').disabled = !parts.length;
+  $('#clrGo').textContent = n ? `Tout démonter (${n} pièce${n > 1 ? 's' : ''})` : 'Tout démonter';
+}
+$('#clrBody').addEventListener('change', (e) => {
+  const t = e.target.closest('[data-clr]'); if (!t) return;
+  const [k, i] = t.dataset.clr.split('|'); const n = Number(i);
+  const list = { row: CLR.rows, lent: CLR.lent, note: CLR.notes, info: CLR.info, ev: CLR.evs }[k];
+  if (list) list[n].on = t.checked;
+  else if (k === 'qty') CLR.rows[n].qty = Math.max(0, Math.min(CLR.rows[n].max, Math.floor(Number(t.value)) || 0));
+  else if (k === 'to') CLR.rows[n].to = Number(t.value);
+  renderClear();
+});
+$('#clrCancel').onclick = () => $('#clrDlg').close();
+$('#clrGo').onclick = async () => {
+  $('#clrErr').textContent = '';
+  const key = (g) => ({ offer_id: g.offer_id, room_name: g.room_name });
+  try {
+    const r = await api('/api/rooms/clear', {
+      room_ids: CLR.ids,
+      lines: CLR.rows.filter((x) => x.on && x.qty > 0).map((x) => ({ item_id: x.item, qty: x.qty, from: x.from, to: x.to })),
+      managed: CLR.lent.filter((g) => g.on).map(key), hide: CLR.info.filter((g) => g.on).map(key),
+      notes: CLR.notes.filter((x) => x.on).map((x) => x.id), events: CLR.evs.filter((x) => x.on).map((x) => x.e.id),
+    });
+    setPL(r);
+    await load(); // stock, salles
+    renderPlanning();
+    $('#clrDlg').close();
+    toast(`${roomsLabel(CLR.ids)} : démonté ✔${r.moved ? ` — ${r.moved} pièce${r.moved > 1 ? 's' : ''} au stock` : ''}${r.validated ? ` · ${r.validated} démontage${r.validated > 1 ? 's' : ''} validé${r.validated > 1 ? 's' : ''} dans le planning` : ''}`);
+  } catch (err) { $('#clrErr').textContent = err.message; }
+};
+
 // ----- Fiches techniques de la case (fenêtre de l'événement) : renommer l'étiquette, retirer de la case, supprimer,
 // importer une fiche pour cette case, ou y associer une fiche déjà enregistrée
-const EVO = { edit: null, confirm: null };
+const EVO = { edit: null, confirm: null, man: null }; // man : « offre|salle » dont on choisit le matériel prêté
 const evRoomsChecked = () => [...document.querySelectorAll('#evRooms input:checked')].map((c) => Number(c.value));
 const evSpan = () => { const a = $('#evDate').value, b = $('#evEndDate').value; return [a, b && b > a ? b : a]; };
 // parties de fiche affichées dans la case : salle en commun et un jour de montage / show / démontage dans la période
@@ -2185,10 +2336,17 @@ function renderEvOffers() {
       continue;
     }
     const k = `${o.id}|${index}`;
+    const ext = (r.items || []).map((it, j) => ({ it, j })).filter((x) => x.it.kind === 'externe');
     h += `<div class="it"><span class="grow">${offerChip(o, r)} <b>${esc(o.client)}</b> <span class="muted">${o.version ? esc(o.version) + ' · ' : ''}${esc(roomsLabel(r.room_ids))} · ${esc(phaseTxt(r))}</span></span>
+      ${ext.length ? `<button type="button" class="btn ghost small" data-evo="man" data-o="${o.id}" data-x="${index}" title="Matériel d'une société externe que nous installons nous-mêmes (prêté)">🤝 Prêté${ext.some((x) => x.it.managed) ? ` (${ext.filter((x) => x.it.managed).length})` : ''}…</button>` : ''}
       <button type="button" class="btn ghost small" data-evo="rename" data-o="${o.id}" title="Nom affiché sur l'étiquette de la case, société">✎ Renommer</button>
       <button type="button" class="btn ghost small" data-evo="unlink" data-o="${o.id}" data-x="${index}" title="La fiche reste dans la liste des offres (hors grille), sans étiquette ici">${EVO.confirm === 'unlink|' + k ? 'Confirmer le retrait' : 'Retirer de la case'}</button>
       <button type="button" class="btn ghost small" data-evo="delete" data-o="${o.id}" style="color:var(--err)">${EVO.confirm === 'delete|' + o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`;
+    // matériel externe : coché = prêté par la société, installé et démonté par nous
+    if (EVO.man === k) h += `<div class="it" style="display:block;padding-left:12px">
+      <p class="muted" style="font-size:12.5px;margin:0 0 6px">Coche le matériel que la société nous <b>prête</b> et que nous installons nous-mêmes : il passe par le montage / démontage avec notre matériel. Le reste est installé par la société (rien à valider). Ce qui a déjà été validé dans une case ne change pas.</p>
+      ${ext.map(({ it, j }) => `<label class="chk" style="margin:2px 0"><input type="checkbox" data-evman="${j}" ${it.managed ? 'checked' : ''}> ${it.qty} × ${esc(it.name)} <span class="pill ext">${esc(it.supplier)}</span></label>`).join('')}
+      <div class="row" style="margin-top:8px"><button type="button" class="btn small" data-evo="mansave" data-o="${o.id}" data-x="${index}">Enregistrer</button><button type="button" class="btn ghost small" data-evo="cancel">Annuler</button></div></div>`;
   }
   // ajouter : nouvelle fiche (PDF) pour cette case, ou fiche déjà enregistrée (d'abord celles de la semaine affichée)
   const shown = new Set(list.map((x) => `${x.o.id}|${x.index}`));
@@ -2204,7 +2362,7 @@ function renderEvOffers() {
 }
 async function evoApi(path, body, msg) {
   $('#evErr').textContent = '';
-  try { setPL(await api(path, body)); EVO.edit = null; EVO.confirm = null; renderEvOffers(); renderPlanning(); toast(msg); }
+  try { setPL(await api(path, body)); EVO.edit = null; EVO.confirm = null; EVO.man = null; renderEvOffers(); renderPlanning(); renderLieux(); toast(msg); }
   catch (err) { $('#evErr').textContent = err.message; }
 }
 $('#evOffers').addEventListener('change', (e) => { if (e.target.id === 'evoAssoc') $('#evOffers [data-evo="assoc"]').disabled = !e.target.value; });
@@ -2212,8 +2370,13 @@ $('#evOffers').addEventListener('click', (e) => {
   const b = e.target.closest('[data-evo]'); if (!b) return;
   const act = b.dataset.evo, id = Number(b.dataset.o), o = PL.offers.find((x) => x.id === id);
   const ids = evRoomsChecked();
-  if (act === 'rename') { EVO.edit = id; EVO.confirm = null; renderEvOffers(); $('#evoLabel')?.focus(); }
-  else if (act === 'cancel') { EVO.edit = null; renderEvOffers(); }
+  if (act === 'rename') { EVO.edit = id; EVO.confirm = null; EVO.man = null; renderEvOffers(); $('#evoLabel')?.focus(); }
+  else if (act === 'cancel') { EVO.edit = null; EVO.man = null; renderEvOffers(); }
+  else if (act === 'man') { const k = `${id}|${b.dataset.x}`; EVO.man = EVO.man === k ? null : k; EVO.edit = null; EVO.confirm = null; renderEvOffers(); }
+  else if (act === 'mansave') {
+    const items = [...document.querySelectorAll('#evOffers [data-evman]:checked')].map((c) => Number(c.dataset.evman));
+    evoApi('/api/offers/update', { id, managed: [{ index: Number(b.dataset.x), items }] }, `Matériel prêté enregistré ✔ (${items.length} élément${items.length > 1 ? 's' : ''} installé${items.length > 1 ? 's' : ''} par nous) · annulable dans Contrôle → Journal`);
+  }
   else if (act === 'save') evoApi('/api/offers/update', { id, label: $('#evoLabel').value, client: $('#evoClient').value }, 'Fiche renommée ✔');
   else if (act === 'unlink') {
     const k = `unlink|${id}|${b.dataset.x}`;
@@ -2277,30 +2440,41 @@ const bestStock = (item, qty) => {
   return (st.find((s) => qtyAt(item, s.id) >= qty) || st.slice().sort((a, b) => qtyAt(item, b.id) - qtyAt(item, a.id))[0])?.id;
 };
 
-// Matériel de sociétés externes (CAS…) : pas déplacé, mais noté comme installé / désinstallé dans la salle
-const lastOfferMove = (offerId, roomName) => PL.offerMoves.filter((m) => (m.external || []).some((x) => x.offer_id === offerId && x.room_name === roomName)).slice(-1)[0];
+// Matériel prêté par une société externe (coché « installé par nous » sur la fiche) : pas de stock, mais installé /
+// démonté par nous et noté dans la salle. Le reste du matériel externe est installé par la société : rien à valider.
+const lastOfferMove = (offerId, roomName) => PL.offerMoves.filter((m) => (m.external || []).some((x) => x.managed && x.offer_id === offerId && x.room_name === roomName)).slice(-1)[0];
 function buildExtRows() {
   const ext = [];
-  for (const { o, r } of PH.ofs) {
+  PH.ofs.forEach(({ o, r }, gi) => {
     const rooms = r.room_ids.filter((id) => PH.body.room_ids.includes(id));
     const room_ids = rooms.length ? rooms : r.room_ids;
-    const base = { offer_id: o.id, room_name: r.name, room_ids, group: `${o.client} — ${r.name || room_ids.map(locName).join(' + ')}`, on: true };
-    const rec = PH.phase === 'Démontage' && lastOfferMove(o.id, r.name);
-    const list = rec && rec.phase === 'Montage'
-      ? rec.external.filter((x) => x.offer_id === o.id && x.room_name === r.name) // ce qui a été noté comme installé au montage
-      : (r.items || []).filter((i) => i.kind === 'externe');
+    const base = { gi, offer_id: o.id, room_name: r.name, room_ids, group: `${o.client} — ${r.name || room_ids.map(locName).join(' + ')}`, on: true };
+    const rec = lastOfferMove(o.id, r.name);
+    const mine = (r.items || []).filter((i) => i.kind === 'externe' && i.managed);
+    // montage : ce qui est coché sur la fiche (sauf si c'est déjà installé) ; démontage : ce qui a été noté installé au montage
+    // (montage fait sans l'application : la fiche ; déjà démonté, par exemple avec « Tout démonter » : rien)
+    const list = PH.phase === 'Montage' ? (rec?.phase === 'Montage' ? [] : mine)
+      : rec ? (rec.phase === 'Montage' ? rec.external.filter((x) => x.managed && x.offer_id === o.id && x.room_name === r.name) : []) : mine;
     for (const x of list) ext.push({ ...base, qty: x.qty, name: x.name, supplier: x.supplier });
-  }
+  });
   PH.ext = ext;
+}
+// matériel installé par la société elle-même dans les fiches de la case (rappel, rien à valider)
+function phaseInfoHtml() {
+  const sup = {};
+  for (const { r } of PH.ofs) for (const i of r.items || []) if (i.kind === 'externe' && !i.managed) sup[i.supplier] = (sup[i.supplier] || 0) + 1;
+  const list = Object.entries(sup);
+  return list.length ? `<p class="muted" style="font-size:12.5px;margin:10px 0 0">${list.map(([s, n]) => `<span class="pill ext">${esc(s)}</span> ${n} élément${n > 1 ? 's' : ''}`).join(' · ')}
+    : installé${list.length > 1 ? 's' : ''} et démonté${list.length > 1 ? 's' : ''} par la société elle-même, <b>rien à valider</b> (visible dans l'onglet Salles pendant les dates de la fiche).</p>` : '';
 }
 
 function buildPhaseRows() {
   buildExtRows();
   const ev = PH.ev, rows = [];
-  for (const { o, r } of PH.ofs) {
+  for (const [gi, { o, r }] of PH.ofs.entries()) {
     const rooms = r.room_ids.filter((id) => PH.body.room_ids.includes(id));
     const roomIds = rooms.length ? rooms : r.room_ids;
-    const base = { offer_id: o.id, room_name: r.name, group: `${o.client} — ${r.name || roomIds.map(locName).join(' + ')}`, on: true };
+    const base = { gi, offer_id: o.id, room_name: r.name, group: `${o.client} — ${r.name || roomIds.map(locName).join(' + ')}`, on: true };
     if (PH.phase === 'Montage') {
       for (const it of (r.items || []).filter((i) => i.kind === 'dolce')) {
         const item = matchItem(it.name);
@@ -2344,13 +2518,22 @@ function renderPhase() {
     ? `<div class="plwarn" style="margin:0 0 10px">Le montage et le démontage sont tous les deux prévus dans cette case. Lequel valides-tu maintenant ? L'autre restera <b>en rouge</b> dans la case jusqu'à sa validation.</div>
        <div class="seg" id="phPhase">${PH.todo.map((p) => `<button type="button" data-p="${p}" class="${p === PH.phase ? 'active' : ''}">${p === 'Montage' ? 'Montage (stock → salle)' : 'Démontage (salle → stock)'}</button>`).join('')}</div>`
     : `<p class="muted" style="margin:0">${m ? '<b>Montage</b> : le matériel Dolce de la fiche part du stock vers la salle.' : '<b>Démontage</b> : le matériel monté revient de la salle vers le stock.'}</p>`;
-  if (!PH.rows.length) {
-    $('#phBody').innerHTML = `<p class="muted">Aucun matériel Dolce ${m ? 'à monter dans cette fiche' : 'à ramener (rien n\'a été monté via l\'application pour cette offre)'}${PH.ext.length ? '' : '. Tu peux valider l\'étape directement'}.</p>`;
+  if (!PH.rows.length && !PH.ext.length) {
+    $('#phBody').innerHTML = `<p class="muted">Aucun matériel Dolce ${m ? 'à monter dans cette fiche' : 'à ramener (rien n\'a été monté via l\'application pour cette offre)'}. Tu peux valider l'étape directement.</p>`;
   } else {
+    // notre matériel puis le matériel prêté (installé par nous), fiche par fiche
+    const all = [...PH.rows.map((r, i) => ({ r, i, lent: false })), ...PH.ext.map((r, i) => ({ r, i, lent: true }))].sort((a, b) => a.r.gi - b.r.gi || a.lent - b.lent);
     let h = '', grp = null;
     h += `<div class="pdfwrap" style="max-height:55vh"><table class="pdft ph"><thead><tr><th></th><th>${m ? 'Fiche technique' : 'Matériel'}</th>${m ? '<th>Matériel de l\'application</th>' : ''}<th>Qté</th><th>Depuis</th><th>Vers</th><th></th></tr></thead><tbody>`;
-    PH.rows.forEach((r, i) => {
+    all.forEach(({ r, i, lent }) => {
       if (r.group !== grp) { grp = r.group; h += `<tr class="dh"><td colspan="${m ? 7 : 6}">${esc(grp)}</td></tr>`; }
+      if (lent) {
+        h += `<tr class="${r.on ? '' : 'off'}"><td><input type="checkbox" data-px="${i}" ${r.on ? 'checked' : ''}></td><td>${r.qty} × ${esc(r.name)}</td>
+          ${m ? `<td><span class="pill lent">prêté par ${esc(r.supplier)}</span></td>` : ''}<td>${r.qty}</td>
+          <td>${m ? esc(r.supplier) : esc(roomsLabel(r.room_ids))}</td><td>${m ? esc(roomsLabel(r.room_ids)) : `<span class="pill lent">rendu à ${esc(r.supplier)}</span>`}</td>
+          <td><span class="muted" style="font-size:12px">pas de stock</span></td></tr>`;
+        return;
+      }
       const avail = r.item === 'new' ? Number(r.newStock) || 0 : r.item ? qtyAt(Number(r.item), Number(r.from)) : 0;
       const status = !r.item ? '<span class="lack">à choisir</span>' : avail >= r.qty ? `<span class="okq">✓ ${avail} dispo</span>` : `<span class="lack">⚠ ${avail} dispo</span>`;
       h += `<tr class="${r.on ? '' : 'off'}"><td><input type="checkbox" data-ph="${i}|on" ${r.on ? 'checked' : ''}></td>
@@ -2363,22 +2546,15 @@ function renderPhase() {
         <td>${m ? `<select data-ph="${i}|to">${locOptions(r.roomIds, r.to)}</select>` : `<select data-ph="${i}|to">${locOptions(stocks().map((s) => s.id), r.to)}</select>`}</td>
         <td>${m ? status : `<span class="muted" style="font-size:12px">${r.max ?? 0} dans la salle</span>`}</td></tr>`;
     });
-    h += '</tbody></table></div><p class="muted" style="font-size:12px;margin:6px 0 0">Les lignes décochées ne sont pas déplacées. Le choix « matériel de l\'application » est retenu pour les prochaines fiches.</p>';
+    h += '</tbody></table></div><p class="muted" style="font-size:12px;margin:6px 0 0">Les lignes décochées ne sont pas déplacées. Le choix « matériel de l\'application » est retenu pour les prochaines fiches.'
+      + (PH.ext.length ? ` Matériel prêté : rien ne bouge dans le stock, il est noté ${m ? 'installé dans la salle (avec notre matériel) jusqu\'à son démontage' : 'démonté'}.` : '') + '</p>';
     $('#phBody').innerHTML = h;
   }
-  if (PH.ext.length) {
-    // matériel externe : coché = réellement installé (montage) / désinstallé (démontage) ; rien ne bouge dans le stock
-    let h = `<div class="phgrp" style="margin-top:14px">Matériel de sociétés externes — ${m ? 'installé' : 'désinstallé'} <span class="muted" style="font-weight:400;font-size:12px">(pas de déplacement de stock, mais noté dans la salle)</span></div>
-      <div class="pdfwrap" style="max-height:35vh"><table class="pdft ph"><tbody>`;
-    let grp = null;
-    PH.ext.forEach((x, i) => {
-      if (x.group !== grp) { grp = x.group; h += `<tr class="dh"><td colspan="3">${esc(grp)}</td></tr>`; }
-      h += `<tr class="${x.on ? '' : 'off'}"><td style="width:28px"><input type="checkbox" data-px="${i}" ${x.on ? 'checked' : ''}></td><td>${x.qty} × ${esc(x.name)}</td><td><span class="pill ext">${esc(x.supplier)}</span></td></tr>`;
-    });
-    $('#phBody').insertAdjacentHTML('beforeend', h + '</tbody></table></div>');
-  }
+  $('#phBody').insertAdjacentHTML('beforeend', phaseInfoHtml());
   const n = PH.rows.filter((r) => r.on && r.qty > 0).reduce((s, r) => s + Number(r.qty), 0);
-  $('#phGo').textContent = n ? `Valider le ${PH.phase.toLowerCase()} et déplacer ${n} pièce${n > 1 ? 's' : ''}` : `Valider le ${PH.phase.toLowerCase()}`;
+  const k = PH.ext.filter((x) => x.on).reduce((s, x) => s + Number(x.qty), 0);
+  $('#phGo').textContent = (n ? `Valider le ${PH.phase.toLowerCase()} et déplacer ${n} pièce${n > 1 ? 's' : ''}` : `Valider le ${PH.phase.toLowerCase()}`)
+    + (k ? ` (+ ${k} prêtée${k > 1 ? 's' : ''})` : '');
   $('#phNoMove').textContent = 'Valider sans déplacer';
   $('#phNoMove').style.display = n ? '' : 'none';
 }
@@ -2453,7 +2629,7 @@ $('#phChoice').addEventListener('click', (e) => {
 });
 $('#phBody').addEventListener('change', (e) => {
   const px = e.target.closest('[data-px]');
-  if (px) { PH.ext[Number(px.dataset.px)].on = px.checked; px.closest('tr').classList.toggle('off', !px.checked); return; }
+  if (px) { PH.ext[Number(px.dataset.px)].on = px.checked; return renderPhase(); }
   const t = e.target.closest('[data-ph]'); if (!t) return;
   const [i, f] = t.dataset.ph.split('|'); const r = PH.rows[Number(i)];
   if (f === 'on') r.on = t.checked;
@@ -2712,6 +2888,14 @@ function ofRoomCell(r, i) {
     <div class="pick evrooms" data-ofroom="${i}" style="display:none;margin-top:6px">${roomPicker()}</div>`;
 }
 
+// pastilles du matériel d'une salle de la fiche ; « choisir le prêté » tant qu'il y a du matériel externe
+function ofMatSummary(r) {
+  const p = offerParts(r.items || []);
+  const ext = (r.items || []).some((it) => it.kind === 'externe');
+  return `${p.dolce.length ? `<span class="pill dolce">Dolce ${p.dolce.length}</span> ` : ''}${p.man.length ? `<span class="pill lent">Prêté, installé par nous ${p.man.length}</span> ` : ''}`
+    + `${Object.entries(p.ext).map(([s, n]) => `<span class="pill ext">${esc(s)} ${n}</span>`).join(' ')} ${p.inc ? `<span class="pill inc">Inclus ${p.inc}</span>` : ''}`
+    + (ext ? ' <span class="muted" style="font-size:12px">· choisir le matériel prêté</span>' : '');
+}
 function renderOfPreview() {
   const d = OF.data; ofMode(true);
   let h = '';
@@ -2730,14 +2914,18 @@ function renderOfPreview() {
       <span class="muted" style="font-size:13px">${esc([d.title, d.version].filter(Boolean).join(' '))}${d.dated ? ` · datée du ${esc(d.dated)}` : ''} · ${esc(d.filename)}</span></div>`;
     if (d.replaces.length) h += `<label class="chk plwarn" style="margin-top:10px"><input type="checkbox" id="ofReplace" checked> Remplacer l'offre déjà enregistrée pour ce client et ces jours-là (${d.replaces.map((o) => `${esc(o.version || '?')} du ${esc(o.ts.slice(0, 10))}`).join(', ')})</label>`;
     h += `<p class="muted" style="font-size:13px;margin:8px 0 0">À l'enregistrement, les étiquettes <span class="tg setup">Montage</span><span class="tg show">Show</span><span class="tg demontage">Démontage</span> sont ajoutées dans la grille (sur l'événement de cette société s'il existe, sinon il est créé). La fiche ne donne pas de démontage : par défaut, le dernier jour de show.</p>`;
+    if (d.rooms.some((r) => r.items.some((it) => it.kind === 'externe'))) h += `<p class="muted" style="font-size:13px;margin:6px 0 0"><span class="pill ext">Sociétés externes</span>
+      leur matériel est installé par elles-mêmes : il apparaît dans la salle (onglet Salles) du montage au démontage, <b>sans rien à valider</b>.
+      Si elles nous <b>prêtent</b> du matériel que nous installons nous-mêmes, ouvre la liste du matériel et coche <b>« installé par nous »</b> :
+      il passera par le montage / démontage et restera dans notre liste avec notre matériel.</p>`;
     h += `<div class="pdfwrap"><table class="pdft oft"><thead><tr><th>Salle (fiche)</th><th>Salle dans l'application</th><th>Montage</th><th>Show</th><th>Démontage</th><th>Matériel</th></tr></thead><tbody>`;
     d.rooms.forEach((r, i) => {
-      const p = offerParts(r.items);
       h += `<tr><td><b>${esc(r.name)}</b><br><span class="muted">page ${r.page}</span></td><td>${ofRoomCell(r, i)}</td>
         <td><input type="date" data-ofd="${i}|setup" value="${esc(r.setup || '')}"></td><td>${esc(r.show_raw || '—')}</td>
         <td><input type="date" data-ofd="${i}|demontage" value="${esc(r.demontage || '')}"></td>
-        <td><details><summary>${p.dolce.length ? `<span class="pill dolce">Dolce ${p.dolce.length}</span> ` : ''}${Object.entries(p.ext).map(([s, n]) => `<span class="pill ext">${esc(s)} ${n}</span>`).join(' ')} ${p.inc ? `<span class="pill inc">Inclus ${p.inc}</span>` : ''}</summary>
-          <ul>${r.items.map((it) => `<li>${it.qty} × ${esc(it.name)} ${kindPill(it)}</li>`).join('')}</ul></details></td></tr>`;
+        <td><details><summary>${ofMatSummary(r)}</summary>
+          <ul>${r.items.map((it, j) => `<li>${it.qty} × ${esc(it.name)} ${kindPill(it)}${it.kind === 'externe'
+            ? ` <label class="chk" style="display:inline-flex;margin-left:4px;font-size:12px"><input type="checkbox" data-ofman="${i}|${j}" ${it.managed ? 'checked' : ''}> installé par nous</label>` : ''}</li>`).join('')}</ul></details></td></tr>`;
     });
     h += '</tbody></table></div>';
     if (d.services.length) h += `<p class="muted" style="font-size:13px;margin:8px 0 0">Services : ${d.services.map((s) => `${s.qty} × ${esc(s.name)} (${esc(s.kind === 'prix' ? s.supplier + ' €' : s.supplier)})`).join(' · ')}</p>`;
@@ -2778,6 +2966,14 @@ $('#ofBody').addEventListener('change', (e) => {
   }
   const sk = e.target.closest('[data-ofskip]');
   if (sk) { d.rooms[Number(sk.dataset.ofskip)].skip = sk.checked; renderOfPreview(); return; }
+  // matériel externe prêté, installé par nous (la liste reste ouverte : seules les pastilles sont mises à jour)
+  const man = e.target.closest('[data-ofman]');
+  if (man) {
+    const [i, j] = man.dataset.ofman.split('|').map(Number);
+    d.rooms[i].items[j].managed = man.checked;
+    man.closest('details').querySelector('summary').innerHTML = ofMatSummary(d.rooms[i]);
+    return;
+  }
   const st = e.target.closest('[data-ofd]');
   if (st) { const [i, f] = st.dataset.ofd.split('|'); d.rooms[Number(i)][f] = st.value || null; }
 });
