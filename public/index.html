@@ -182,7 +182,7 @@
   .extin .pill { font-size:10px; }
   .extin .hit { background:var(--hit); font-weight:600; border-radius:4px; }
   .extin .dim { opacity:.5; }
-  /* matériel hors stock (notes) installé dans la salle */
+  /* matériel ajouté (notes) installé dans la salle */
   .hsin { margin-top:8px; padding-top:4px; border-top:1px solid var(--line); font-size:13px; }
   .hsin .lbl { font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; margin:8px 0 3px; display:flex; align-items:center; gap:6px; }
   .hsin > div + div { margin-top:2px; }
@@ -406,7 +406,7 @@
   .evrooms .fl:first-child { margin-top:0; }
   .evrooms label { display:inline-flex; flex-direction:row; align-items:center; gap:5px; margin:0 12px 3px 0; font-size:13px; font-weight:500; color:var(--ink); }
   .evrooms input { width:auto; margin:0; }
-  /* case du planning : fiches techniques et matériel hors stock */
+  /* case du planning : fiches techniques, matériel ajouté et actions à faire */
   .evsec { border:1px solid var(--line); border-radius:12px; padding:9px 12px; font-size:13px; }
   .evsec:empty { display:none; }
   .evsec .h { font-weight:700; margin-bottom:4px; }
@@ -490,6 +490,19 @@
   td.empty.hasofr:hover::after { content:none; }
   .ofrday { background:var(--teal-soft); border:0; border-radius:12px; padding:10px 14px; margin-bottom:10px; font-size:13px; }
   .ofrday div + div { margin-top:4px; }
+  /* actions à faire dans une salle (« 14:00 ajouter 3 multi ») : planning, onglet Salles, fenêtres */
+  .ofrday.actday { background:var(--violet-soft); }
+  .actday [data-acts] { cursor:pointer; }
+  .actday .done, .evact .done, .actin .done, .evsec .it.done .grow b { opacity:.55; text-decoration:line-through; }
+  .evact { font-size:12px; color:var(--violet-ink); margin-top:3px; font-weight:600; }
+  .hsx.alldone, .actchip.alldone { opacity:.45; }
+  td.empty.hasact { padding:4px 5px; }
+  td.empty.hasact:hover::after { content:none; }
+  .actchip { display:inline-block; font-size:11px; font-weight:700; color:var(--violet-ink); background:var(--violet-soft); border-radius:6px; padding:1px 6px; cursor:pointer; }
+  .actin { margin-top:8px; padding-top:4px; border-top:1px solid var(--line); font-size:13px; }
+  .actin .lbl { color:var(--violet-ink); }
+  .actin .late, .evsec .late { color:var(--err); font-weight:600; }
+  .actin .k, .evsec .k { font-weight:700; color:var(--violet-ink); }
 
   /* ---- Fenêtres (dialogues) : animation d'ouverture, fond flouté ---- */
   dialog { border:0; border-radius:18px; padding:22px; background:var(--card); color:var(--ink); box-shadow:var(--shadow-lg); }
@@ -778,6 +791,7 @@
     <div><div class="lbl">Salles <small class="muted" id="evRoomsHint"></small></div><div id="evRooms" class="evrooms"></div></div>
     <div id="evOffers" class="evsec"></div>
     <div id="evNotes" class="evsec"></div>
+    <div id="evActs" class="evsec"></div>
     <input type="file" id="evOfFile" accept=".pdf,application/pdf" hidden>
     <p class="warn" id="evErr"></p>
   </div>
@@ -787,8 +801,11 @@
   </div>
 </dialog>
 <dialog id="noteDlg">
-  <h2 id="noteTitle">Matériel hors stock</h2>
-  <div id="noteBody" class="evsec" style="width:min(520px,88vw)"></div>
+  <h2 id="noteTitle">Matériel ajouté</h2>
+  <div style="display:flex;flex-direction:column;gap:12px;width:min(600px,88vw)">
+    <div id="noteBody" class="evsec"></div>
+    <div id="actBody" class="evsec"></div>
+  </div>
   <div class="row" style="margin-top:14px;justify-content:flex-end">
     <button type="button" class="btn ghost" id="noteClose">Fermer</button>
   </div>
@@ -966,7 +983,7 @@ const externalAll = () => PL.external || [];
 const lentIn = (ids) => externalAll().filter((x) => x.managed && x.room_ids.some((id) => ids.includes(id)));
 const lentTxt = (x) => `${x.qty} × ${x.name} (prêt ${x.supplier})`;
 
-// Salles réunies : parties qui partagent du matériel installé ensemble (société externe ou hors stock noté pour
+// Salles réunies : parties qui partagent du matériel installé ensemble (société externe ou matériel ajouté noté pour
 // « Redwood 1 + 2 ») → une seule carte dans l'onglet Salles, le matériel n'est pas répété dans chaque partie
 function mergedRooms() {
   let groups = [];
@@ -1020,8 +1037,8 @@ function renderLieux() {
       const eq = [...eqm.values()].map((x) => ({ ...x, hit: !q || norm(x.name).includes(q) }));
       if (q && !lines.some((x) => x.hit) && !ext.some((x) => x.hit) && !eq.some((x) => x.hit) && !hs.some((x) => x.hit)) return ''; // recherche : on ne garde que les emplacements concernés
       if (q) { rooms++; pieces += lines.filter((x) => x.hit).reduce((a, x) => a + x.s.qty, 0) + ext.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0) + hs.filter((x) => x.hit).reduce((a, x) => a + x.qty, 0); }
-      // 1) notre matériel (du stock + prêté que nous avons installé), 2) hors stock, 3) installé par une société externe
-      // (à titre d'info, résumé), 4) équipement inclus (fixe)
+      // 1) notre matériel (du stock + prêté que nous avons installé), 2) matériel ajouté, 3) actions à faire,
+      // 4) installé par une société externe (à titre d'info, résumé), 5) équipement inclus (fixe)
       const cls = (x) => (q ? (x.hit ? 'hit' : 'dim') : '');
       const eqHtml = eq.length ? `<div class="eqin"><div class="lbl">Équipement de la salle (inclus)</div>${eq.map((x) =>
         `<div class="${cls(x)}">${x.qty} × ${esc(x.name)}</div>`).join('')}</div>` : '';
@@ -1032,12 +1049,16 @@ function renderLieux() {
       const infoHtml = info.length ? `<div class="extin info"><div class="lbl">Installé par une société externe · rien à faire</div>${[...bySup].map(([s, xs]) =>
         q && xs.some((x) => x.hit) ? xs.filter((x) => x.hit).map((x) => `<div class="hit">${x.qty} × ${esc(x.name)} <span class="pill ext">${esc(s)}</span></div>`).join('')
           : `<div class="sum ${q ? 'dim' : ''}" title="${esc(xs.map((x) => `${x.qty} × ${x.name}`).join('\n'))}"><span class="pill ext">${esc(s)}</span> ${xs.length} élément${xs.length > 1 ? 's' : ''} · jusqu'au ${esc(dayLabel(xs.map((x) => x.to).sort().pop()))}</div>`).join('')}</div>` : '';
-      const hsHtml = hs.length ? `<div class="hsin"><div class="lbl">Hors stock</div>${hs.map((x) =>
+      const hsHtml = hs.length ? `<div class="hsin"><div class="lbl">Matériel ajouté${ours.length ? ' · hors fiche technique' : ''}</div>${hs.map((x) =>
         `<div class="${cls(x)}" title="${esc(`Ajouté le ${dayLabel(x.ts.slice(0, 10))}${x.client ? ' — ' + x.client : ''}`)}">${esc(noteTxt(x))}</div>`).join('')}</div>` : '';
+      // actions pas encore faites (une action sur une salle réunie : dans la carte de sa première partie)
+      const acts = q ? [] : actionsIn(ids).filter((a) => !a.done_ts && ids.includes(a.room_ids[0]));
+      const actHtml = acts.length ? `<div class="actin"><div class="lbl">⏰ À faire</div>${acts.map((a) =>
+        `<div title="${esc(a.client || '')}"><span class="${a.date < isoToday() ? 'late' : 'k'}">${esc(actWhen(a))}</span> ${esc(actTxt(a))}${a.room_ids.some((x) => !ids.includes(x)) ? ` <span class="muted">(${esc(roomsLabel(a.room_ids))})</span>` : ''}</div>`).join('')}</div>` : '';
       const full = ours.length || hs.length;
-      return `<div class="card ${full ? 'filled' : info.length ? 'vide extonly' : 'vide'} ${q ? 'found' : ''}" data-room="${ids[0]}" data-rooms="${ids.join(',')}" title="Clic : amener du matériel, tout démonter, matériel hors stock, équipement"><h3>${esc(ids.length > 1 ? roomsLabel(ids) : l.name)}</h3>` +
+      return `<div class="card ${full ? 'filled' : info.length ? 'vide extonly' : 'vide'} ${q ? 'found' : ''}" data-room="${ids[0]}" data-rooms="${ids.join(',')}" title="Clic : amener du matériel, tout démonter, matériel ajouté, actions à faire, équipement"><h3>${esc(ids.length > 1 ? roomsLabel(ids) : l.name)}</h3>` +
         (ids.length > 1 ? `<div class="merged">Salle réunie : ${esc(ids.map(locName).join(' + '))}</div>` : '') +
-        (ours.length ? `<div class="lbl stk">Notre matériel</div><table><tbody>${ours.join('')}</tbody></table>` : '') + hsHtml + infoHtml + eqHtml + '</div>';
+        (ours.length ? `<div class="lbl stk">Notre matériel</div><table><tbody>${ours.join('')}</tbody></table>` : '') + hsHtml + actHtml + infoHtml + eqHtml + '</div>';
     }).filter(Boolean);
     if (q && !cards.length) return ''; // recherche : sections sans résultat masquées
     const open = q ? true : (lieuOpen[g.label] ?? true);
@@ -1148,12 +1169,13 @@ $('#lieuxGrid').addEventListener('click', (e) => {
   const one = ids.length === 1;
   const anything = ids.some(full) || notesIn(ids).length || externalAll().some((x) => x.room_ids.some((r) => ids.includes(r)));
   roomMenu.dataset.room = id; roomMenu.dataset.rooms = ids.join(',');
-  // salle réunie : vider / équipement par partie ; le matériel hors stock et « tout démonter » valent pour la salle réunie
+  // salle réunie : vider / équipement par partie ; le matériel ajouté, les actions et « tout démonter » valent pour la salle réunie
   roomMenu.innerHTML = `<div class="rmh">${esc(one ? locName(id) : roomsLabel(ids) + ' (salle réunie)')}</div>
     <button type="button" data-act="fill" data-id="${id}">＋ Amener du matériel du stock${one ? '' : ` (→ ${esc(locName(id))})`}</button>
     ${anything ? `<button type="button" data-act="clear">⤓ Tout démonter${one ? '' : ' (salle réunie)'}…</button>` : ''}
     ${ids.filter(full).map((x) => `<button type="button" data-act="empty" data-id="${x}">← Vider ${one ? 'la salle' : esc(locName(x))} vers le stock (choix du matériel)</button>`).join('')}
-    <button type="button" data-act="notes">🧰 Matériel hors stock…</button>
+    <button type="button" data-act="notes">🧰 Matériel ajouté…</button>
+    <button type="button" data-act="actions">⏰ Actions à faire…</button>
     ${ids.map((x) => `<button type="button" data-act="equip" data-id="${x}">✎ ${one ? 'Modifier l\'équipement inclus' : 'Équipement inclus — ' + esc(locName(x))}</button>`).join('')}`;
   roomMenu.hidden = false;
   const r = card.getBoundingClientRect(), mw = 250;
@@ -1167,7 +1189,7 @@ roomMenu.addEventListener('click', (e) => {
   if (b.dataset.act === 'fill') roomFill(id);
   else if (b.dataset.act === 'empty') roomEmpty(id);
   else if (b.dataset.act === 'clear') openClear(roomMenu.dataset.rooms.split(',').map(Number));
-  else if (b.dataset.act === 'notes') openNotes(roomMenu.dataset.rooms.split(',').map(Number));
+  else if (b.dataset.act === 'notes' || b.dataset.act === 'actions') openRoomExtra(roomMenu.dataset.rooms.split(',').map(Number), b.dataset.act);
   else openLocEdit(id);
 });
 document.addEventListener('click', (e) => { if (!roomMenu.hidden && !roomMenu.contains(e.target)) roomMenu.hidden = true; });
@@ -1692,10 +1714,10 @@ $('#retGo').onclick = async () => {
 
 // ---- Onglet "Planning BEO" : planning géré directement dans l'application ----
 let _v = 'grid', _dn = 'compact'; try { _v = localStorage.getItem('plView') || 'grid'; _dn = localStorage.getItem('plDensity') || 'compact'; } catch {}
-const PL = { events: [], offers: [], offerMoves: [], external: [], notes: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+const PL = { events: [], offers: [], offerMoves: [], external: [], notes: [], actions: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
 // réponse du serveur (planningData) → état du planning
 function setPL(r) {
-  PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.external = r.external || []; PL.notes = r.notes || []; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+  PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.external = r.external || []; PL.notes = r.notes || []; PL.actions = r.actions || []; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
 }
 const PL_COLOR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -1715,11 +1737,17 @@ const dayLabel = (iso, long) => {
   return `${w} ${pad2(dt.getDate())}/${pad2(dt.getMonth() + 1)}`;
 };
 const roomStuff = (id) => D.stock.filter((s) => s.location_id === id).map((s) => `${D.items.find((i) => i.id === s.item_id)?.name || '?'} ×${s.qty}`);
-// matériel hors stock (notes) installé dans ces salles ; une note sur une salle réunie compte une seule fois
+// matériel ajouté (notes) installé dans ces salles ; une note sur une salle réunie compte une seule fois
 const notesIn = (ids) => (PL.notes || []).filter((n) => n.room_ids.some((id) => ids.includes(id)));
 // sur une case du planning : seulement si l'événement se termine après l'installation (pas sur les semaines passées)
 const notesOn = (e) => notesIn(e.room_ids).filter((n) => n.event_id === e.id || n.ts.slice(0, 10) <= e.end_date);
 const noteTxt = (n) => `${n.qty} × ${n.name}`;
+// actions à faire dans ces salles (« 14:00 ajouter 3 multi ») ; sur une case : celles des jours de l'événement
+const actionsIn = (ids) => (PL.actions || []).filter((a) => a.room_ids.some((id) => ids.includes(id)));
+const actionsOn = (e) => actionsIn(e.room_ids).filter((a) => e.date <= a.date && a.date <= e.end_date);
+const actTxt = (a) => (a.kind === 'autre' ? a.name : `${a.kind === 'ajouter' ? 'Ajouter' : 'Enlever'} ${a.qty} × ${a.name}`);
+const actWhen = (a) => `${a.date === isoToday() ? 'auj.' : dayLabel(a.date)}${a.time ? ' ' + a.time : ''}`;
+const actLine = (a) => `${a.done_ts ? '✓ ' : ''}${actWhen(a)} · ${actTxt(a)}`;
 // « Redwood 1 + 2 + 3 » (parties d'une même salle), sinon « Teck + Ginko »
 function roomsLabel(ids) {
   const names = ids.map(locName);
@@ -1769,8 +1797,11 @@ function evCard(e) {
   const stuff = e.room_ids.flatMap((id) => { const l = roomStuff(id); return l.length ? [`${locName(id)} : ${l.join(', ')}`] : []; });
   const lent = lentIn(e.room_ids);
   if (lent.length) stuff.push(lent.map(lentTxt).join(', '));
+  // matériel ajouté : « hors fiche technique » seulement quand du matériel de la fiche est aussi dans la salle
   const hs = notesOn(e);
-  if (hs.length) stuff.push(`hors stock : ${hs.map(noteTxt).join(', ')}`);
+  if (hs.length) stuff.push(`${stuff.length ? 'hors fiche technique : ' : ''}${hs.map(noteTxt).join(', ')}`);
+  const acts = actionsOn(e);
+  const actHtml = acts.length ? `<div class="evact">⏰ ${acts.map((a) => `<span class="${a.done_ts ? 'done' : ''}">${esc(actLine(a))}</span>`).join(' · ')}</div>` : '';
   const inst = e.room_ids.length
     ? (stuff.length ? `Dans la salle : ${stuff.map(esc).join(' — ')}` : '<i>Aucun matériel enregistré dans la salle</i>')
     : '<i>Aucune salle reconnue : clique pour choisir la salle</i>';
@@ -1781,7 +1812,7 @@ function evCard(e) {
   const rooms = e.room_ids.length ? e.room_ids.map((id) => locName(id)) : e.rooms;
   return `<div class="ev ${e.color || ''} ${isSplit(e) ? 'split' : ''}" data-edit="${e.id}" title="${esc(beoInfoLines(e).join('\n'))}">${time}
     <div class="evmain"><div><b class="evclient">${esc(e.client)}</b>${avExtra(e).length ? `<span class="avx" style="float:none;margin:0 6px" title="${esc('Infos AV en plus dans le BEO :\n' + avExtra(e).join('\n'))}">ⓘ AV</span>` : ''}${rooms.map((r) => `<span class="rm">${esc(r)}</span>`).join('')}${tags}</div>
-      ${e.detail ? `<div class="evdetail">${esc(e.detail)}</div>` : ''}${inst ? `<div class="evinst">${inst}</div>` : ''}</div>
+      ${e.detail ? `<div class="evdetail">${esc(e.detail)}</div>` : ''}${inst ? `<div class="evinst">${inst}</div>` : ''}${actHtml}</div>
     ${e.color ? `<span class="evstatus ${e.color}">${PL_COLOR[e.color]}</span>` : ''}</div>`;
 }
 
@@ -1838,12 +1869,15 @@ function gridCell(e, hit, extra = '') {
   const stuff = [...e.room_ids.flatMap((id) => roomStuff(id)), ...lentIn(e.room_ids).map(lentTxt)];
   const xtra = avExtra(e);
   const hs = notesOn(e).map(noteTxt);
+  const acts = actionsOn(e);
   const tip = [e.client, e.detail, ...beoInfoLines(e), xtra.length ? 'Infos AV du BEO :\n   ' + xtra.join('\n   ') : '', stuff.length ? 'Dans la salle : ' + stuff.join(', ') : '',
-    hs.length ? 'Hors stock dans la salle : ' + hs.join(', ') : ''].filter(Boolean).join('\n');
+    hs.length ? `${stuff.length ? 'Ajouté, hors fiche technique' : 'Matériel ajouté'} : ${hs.join(', ')}` : '',
+    acts.length ? 'Actions à faire :\n   ' + acts.map(actLine).join('\n   ') : ''].filter(Boolean).join('\n');
   const time = e.start ? `<div class="t">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</div>` : '';
   const tags = e.tags.map((t) => tagChip(t, e)).join(' ');
   const mark = (xtra.length ? `<span class="avx" title="${esc('Infos AV en plus dans le BEO :\n' + xtra.join('\n'))}">ⓘ</span>` : '')
-    + (hs.length ? `<span class="hsx" title="${esc('Matériel hors stock installé :\n' + hs.join('\n'))}">🧰</span>` : '');
+    + (hs.length ? `<span class="hsx" title="${esc('Matériel ajouté dans la salle :\n' + hs.join('\n'))}">🧰</span>` : '')
+    + (acts.length ? `<span class="hsx ${acts.every((a) => a.done_ts) ? 'alldone' : ''}" title="${esc('Actions à faire :\n' + acts.map(actLine).join('\n'))}">⏰</span>` : '');
   return `<div class="pc ${e.color || ''} ${isSplit(e) ? 'split' : ''} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${mark}${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
 }
 
@@ -1962,7 +1996,11 @@ function renderGrid(days, weekEvs, hit, today) {
       if (v === 'x') continue;
       if (!v) {
         const ch = chipsFor(r, 1, c, 1).map((x) => offerChip(x.o, x.r)).join('');
-        tds.push(`<td class="empty${ch ? ' hasofr' : ''}${r === ti ? ' tdy' : ''}" data-new="1" data-d="${d}" data-r="${cols[c].id}">${ch}</td>`); continue;
+        // actions à faire dans la salle un jour sans événement (clic : la liste des actions de la salle)
+        const ac = actionsIn([cols[c].id]).filter((a) => a.date === d);
+        const next = ac.find((a) => !a.done_ts && a.time) || ac.find((a) => a.time); // heure affichée : la prochaine pas faite
+        const ah = ac.length ? `<span class="actchip ${ac.every((a) => a.done_ts) ? 'alldone' : ''}" data-acts="${ac[0].room_ids.join(',')}" title="${esc('Actions à faire :\n' + ac.map(actLine).join('\n'))}">⏰ ${esc(next?.time || '')}${ac.length > 1 ? ` +${ac.length - 1}` : ''}</span>` : '';
+        tds.push(`<td class="empty${ch ? ' hasofr' : ''}${ah ? ' hasact' : ''}${r === ti ? ' tdy' : ''}" data-new="1" data-d="${d}" data-r="${cols[c].id}">${ch}${ah}</td>`); continue;
       }
       // l'étiquette « Offre » va dans l'événement de la même société (sinon dans le dernier de la case)
       const list = v.list.slice().sort((a, b) => tkey(a).localeCompare(tkey(b)));
@@ -2023,7 +2061,10 @@ function renderPlanning() {
     const p = offerParts(r.items || []);
     return `<div>${offerChip(o, r)} ${ph.map((t) => `<span class="tg ${tagClass(t)}">${t}</span>`).join('')} <b>${esc(o.client)}</b> · ${r.room_ids.map(locName).map(esc).join(', ')}${r.show_from ? ` <span class="muted">(show ${esc(r.show_raw || dayLabel(r.show_from))})</span>` : ''}${p.dolce.length && ph.includes('Montage') ? ` — <span class="pill dolce">Dolce</span> ${p.dolce.map((i) => `${i.qty} × ${esc(i.name)}`).join(', ')}` : ''}${p.man.length && ph.includes('Montage') ? ` — <span class="pill lent">prêté</span> ${p.man.map((i) => `${i.qty} × ${esc(i.name)} (${esc(i.supplier)})`).join(', ')}` : ''}</div>`;
   }).join('')}</div>` : '';
-  $('#plBody').innerHTML = `<h2 class="plday">${dayLabel(PL.day, true)}</h2>` + ofHtml +
+  // actions à faire ce jour-là, toutes salles (clic : la liste des actions de la salle)
+  const acts = (PL.actions || []).filter((a) => a.date === PL.day);
+  const actHtml = acts.length ? `<div class="ofrday actday"><b>Actions à faire ce jour-là</b>${acts.map((a) => `<div class="${a.done_ts ? 'done' : ''}" data-acts="${a.room_ids.join(',')}" title="Clic : les actions de la salle">${a.done_ts ? '✓' : '⏰'} ${a.time ? `<b>${esc(a.time)}</b> ` : ''}${esc(roomsLabel(a.room_ids))} : ${esc(actTxt(a))}${a.client ? ` <span class="muted">· ${esc(a.client)}</span>` : ''}</div>`).join('')}</div>` : '';
+  $('#plBody').innerHTML = `<h2 class="plday">${dayLabel(PL.day, true)}</h2>` + ofHtml + actHtml +
     (list.length ? dayBlock(list) : emptyState('Aucun événement ce jour-là', 'Rien de prévu dans les salles : profites-en pour ranger le stock !'));
 }
 
@@ -2098,10 +2139,11 @@ function openEvent(ev, pre) {
     <button type="button" class="btn ghost small" id="evUndo" style="margin-left:8px">↩ Annuler une validation…</button>` : '';
   $('#evDel').style.display = ev ? '' : 'none'; $('#evDel').textContent = 'Supprimer';
   $('#evErr').textContent = '';
-  // fiches techniques de la case et matériel hors stock de la salle
+  // fiches techniques de la case, matériel ajouté et actions à faire dans la salle
   EVO.edit = null; EVO.confirm = null; EVO.man = null;
-  $('#evNotes').innerHTML = '';
+  $('#evNotes').innerHTML = ''; $('#evActs').innerHTML = '';
   renderEvOffers(); renderNotes($('#evNotes'), [...sel]);
+  renderActions($('#evActs'), [...sel], { from: day, to: ev?.end_date || day });
   $('#evDlg').showModal();
   if (!ev) $('#evClient').focus();
 }
@@ -2135,6 +2177,8 @@ window.addEventListener('scroll', closeEvMenu, true);
 
 $('#plBody').addEventListener('click', (e) => {
   if (e.target.closest('a.ofr')) return; // ouvre le PDF de l'offre (lien)
+  const ac = e.target.closest('[data-acts]');
+  if (ac) return openRoomExtra(ac.dataset.acts.split(',').map(Number), 'actions');
   // un événement, ou la partie vide d'une case agrandie (→ dernier événement de la case)
   const c = e.target.closest('[data-edit]') || e.target.closest('td[data-last]');
   if (c) {
@@ -2183,19 +2227,19 @@ $('#evDel').onclick = async () => {
   } catch (err) { $('#evErr').textContent = err.message; }
 };
 
-// ----- Matériel hors stock (notes) : « 3 multi », « 2 boîtiers HD-SDI/HDMI »… installé dans la salle dès l'ajout,
+// ----- Matériel ajouté (notes) : « 3 multi », « 2 boîtiers HD-SDI/HDMI »… installé dans la salle dès l'ajout,
 // sans catalogue ni étape « montage » ; à démonter (fiche du jour) puis « ✓ Démonté ». Même bloc dans la case et dans l'onglet Salles.
 function renderNotes(box, ids, ctx = {}) {
   box._ctx = { ...ctx, ids };
   const list = notesIn(ids);
   const keep = box.querySelector('[data-notetxt]')?.value || ''; // texte en cours de saisie gardé
-  box.innerHTML = `<div class="h">🧰 Matériel hors stock dans la salle ${list.length ? `<span class="muted" style="font-weight:400">(${list.length})</span>` : ''}</div>` +
+  box.innerHTML = `<div class="h">🧰 Matériel ajouté dans la salle ${list.length ? `<span class="muted" style="font-weight:400">(${list.length})</span>` : ''}</div>` +
     (!ids.length ? '<p class="muted" style="margin:0">Choisis d\'abord la salle.</p>'
       : list.map((n) => `<div class="it"><span class="grow"><b>${esc(noteTxt(n))}</b> <span class="muted">· ${esc(roomsLabel(n.room_ids))} · depuis le ${esc(dayLabel(n.ts.slice(0, 10)))}${n.client ? ' · ' + esc(n.client) : ''}</span></span>
           <button type="button" class="btn ghost small" data-noterm="${n.id}" title="Retiré de la salle">✓ Démonté</button></div>`).join('')
         + `<div class="it"><input data-notetxt value="${esc(keep)}" placeholder="ex : 3 multi  ·  2 boîtiers HD-SDI/HDMI" style="flex:1;min-width:200px">
           <button type="button" class="btn small" data-noteadd>＋ Ajouter</button></div>
-          <p class="muted" style="font-size:12px;margin:2px 0 0">Compté comme installé dans ${esc(roomsLabel(ids))} dès l'ajout (pas de stock, pas d'étape « montage ») · apparaît à démonter dans la fiche du jour.</p>`);
+          <p class="muted" style="font-size:12px;margin:2px 0 0">Compté comme installé dans ${esc(roomsLabel(ids))} dès l'ajout (texte libre : rien ne bouge dans le stock, pas d'étape « montage ») · apparaît à démonter dans la fiche du jour.</p>`);
 }
 async function addNote(box) {
   const inp = box.querySelector('[data-notetxt]'); const text = inp?.value.trim();
@@ -2204,33 +2248,112 @@ async function addNote(box) {
     // depuis une case : rattaché à l'événement (société affichée à côté du matériel)
     const fromEv = box.id === 'evNotes';
     setPL(await api('/api/notes/add', { room_ids: box._ctx.ids, text, event_id: fromEv ? EV.id : null, client: fromEv ? $('#evClient').value.trim() : '' }));
-    inp.value = ''; afterNotes(box); toast('Ajouté dans la salle ✔'); box.querySelector('[data-notetxt]')?.focus();
+    inp.value = ''; afterRoomExtra(); toast('Ajouté dans la salle ✔'); box.querySelector('[data-notetxt]')?.focus();
   } catch (err) { toast(err.message, true); }
 }
-function afterNotes(box) { renderNotes(box, box._ctx.ids, box._ctx); renderPlanning(); renderLieux(); }
+// matériel ajouté et actions : les blocs ouverts (case ou fenêtre de la salle) se suivent (« ✓ Fait » sur « ajouter » → matériel ajouté)
+function afterRoomExtra() {
+  for (const b of [$('#evNotes'), $('#noteBody')]) if (b._ctx && b.closest('dialog').open) renderNotes(b, b._ctx.ids, b._ctx);
+  for (const b of [$('#evActs'), $('#actBody')]) if (b._ctx && b.closest('dialog').open) renderActions(b, b._ctx.ids, b._ctx);
+  renderPlanning(); renderLieux();
+}
 for (const box of [$('#evNotes'), $('#noteBody')]) {
   box.addEventListener('click', async (e) => {
     const rm = e.target.closest('[data-noterm]');
     if (rm) {
-      try { setPL(await api('/api/notes/remove', { id: Number(rm.dataset.noterm) })); afterNotes(box); toast('Noté comme démonté ✔'); } catch (err) { toast(err.message, true); }
+      try { setPL(await api('/api/notes/remove', { id: Number(rm.dataset.noterm) })); afterRoomExtra(); toast('Noté comme démonté ✔'); } catch (err) { toast(err.message, true); }
       return;
     }
     if (e.target.closest('[data-noteadd]')) addNote(box);
   });
   box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('[data-notetxt]')) { e.preventDefault(); addNote(box); } });
 }
-// depuis l'onglet Salles (salle seule ou salle réunie)
-function openNotes(ids) {
-  $('#noteTitle').textContent = `Matériel hors stock — ${roomsLabel(ids)}`;
-  $('#noteBody').innerHTML = '';
+
+// ----- Actions à faire dans une salle : un jour, une heure (facultative), « Ajouter 3 multi », « Enlever 1 pupitre » ou un
+// autre rappel. Texte libre : rien ne bouge dans le stock. « ✓ Fait » : ajouter → devient du matériel ajouté dans la salle ;
+// enlever → le matériel ajouté du même nom est noté démonté. Affichées dans la fiche du jour, à leur heure.
+const ACT_KINDS = { ajouter: 'Ajouter', enlever: 'Enlever', autre: 'Autre' };
+const ACT_PH = { ajouter: 'ex : 3 multi', enlever: 'ex : 2 boîtiers HD-SDI/HDMI', autre: 'ex : brancher le PC du client' };
+const ACT_DONE = { ajouter: 'le matériel devient du matériel ajouté dans la salle (à démonter plus tard)', enlever: 'le matériel ajouté du même nom est noté démonté', autre: 'simple rappel' };
+function renderActions(box, ids, ctx = {}) {
+  box._ctx = { ...ctx, ids };
+  const today = isoToday();
+  // jour proposé : aujourd'hui pendant l'événement, sinon son premier jour
+  const day0 = ctx.from && !(ctx.from <= today && today <= (ctx.to || ctx.from)) ? ctx.from : today;
+  const f = (k) => box.querySelector(`[data-act${k}]`)?.value; // saisie en cours gardée
+  const kind = f('kind') || 'ajouter', date = f('date') || day0, time = f('time') || '', text = f('txt') || '';
+  // pas faites (même anciennes) + faites depuis hier
+  const list = actionsIn(ids).filter((a) => !a.done_ts || a.date >= addDays(today, -1));
+  const pending = list.filter((a) => !a.done_ts).length;
+  const notes = kind === 'enlever' ? notesIn(ids) : [];
+  box.innerHTML = `<div class="h">⏰ Actions à faire dans la salle ${pending ? `<span class="muted" style="font-weight:400">(${pending})</span>` : ''}</div>` +
+    (!ids.length ? '<p class="muted" style="margin:0">Choisis d\'abord la salle.</p>'
+      : list.map((a) => {
+        const late = !a.done_ts && a.date < today;
+        return `<div class="it ${a.done_ts ? 'done' : ''}"><span class="grow"><span class="${late ? 'late' : 'k'}">${esc(actWhen(a))}</span> <b>${esc(actTxt(a))}</b>
+          <span class="muted">· ${esc(roomsLabel(a.room_ids))}${a.client ? ' · ' + esc(a.client) : ''}${a.done_ts ? ` · fait le ${esc(dayLabel(a.done_ts.slice(0, 10)))} à ${esc(a.done_ts.slice(11, 16))}` : late ? ' · pas faite' : ''}</span></span>
+          ${a.done_ts ? `<button type="button" class="btn ghost small" data-actundo="${a.id}" title="Pas faite finalement : remettre à faire">↩</button>`
+            : `<button type="button" class="btn ghost small" data-actdone="${a.id}">✓ Fait</button>`}
+          <button type="button" class="btn ghost small" data-actdel="${a.id}" title="Supprimer cette action">✕</button></div>`;
+      }).join('')
+        + `<div class="it"><select data-actkind style="flex:0 0 auto;min-width:0;width:auto">${Object.entries(ACT_KINDS).map(([k, t]) => `<option value="${k}" ${k === kind ? 'selected' : ''}>${t}</option>`).join('')}</select>
+          <input type="date" data-actdate value="${esc(date)}" style="width:auto"><input type="time" data-acttime value="${esc(time)}" style="width:auto" title="Heure (facultative)">
+          <input data-acttxt value="${esc(text)}" placeholder="${ACT_PH[kind]}" style="flex:1;min-width:160px">
+          <button type="button" class="btn small" data-actadd>＋ Ajouter</button></div>`
+        + (notes.length ? `<div class="muted" style="font-size:12px">Matériel ajouté dans la salle : ${notes.map((n) => `<button type="button" class="btn ghost small" data-actpick="${esc(`${n.qty} ${n.name}`)}">${esc(noteTxt(n))}</button>`).join(' ')}</div>` : '')
+        + `<p class="muted" style="font-size:12px;margin:2px 0 0">Apparaît dans la fiche du jour, à son heure · « ✓ Fait » : ${ACT_DONE[kind]} · rien ne bouge dans le stock.</p>`);
+}
+async function addAction(box) {
+  const inp = box.querySelector('[data-acttxt]'); const text = inp?.value.trim();
+  if (!text) return inp?.focus();
+  const val = (k) => box.querySelector(`[data-act${k}]`).value;
+  try {
+    // depuis une case : rattachée à l'événement (société affichée à côté de l'action)
+    const fromEv = box.id === 'evActs';
+    setPL(await api('/api/actions/add', { room_ids: box._ctx.ids, kind: val('kind'), date: val('date'), time: val('time'), text,
+      event_id: fromEv ? EV.id : null, client: fromEv ? $('#evClient').value.trim() : '' }));
+    inp.value = ''; afterRoomExtra(); toast('Action ajoutée ✔'); box.querySelector('[data-acttxt]')?.focus();
+  } catch (err) { toast(err.message, true); }
+}
+function actDoneMsg(r) {
+  const s = (n) => (n > 1 ? 's' : '');
+  if (r.added) return `Fait ✔ — ${r.added} ajouté${s(r.added)} dans la salle`;
+  if (r.removed) return `Fait ✔ — ${r.removed} noté${s(r.removed)} démonté${s(r.removed)}${r.missing ? ` (${r.missing} pas trouvé${s(r.missing)} dans le matériel ajouté)` : ''}`;
+  return r.missing ? 'Fait ✔ — rien de ce nom dans le matériel ajouté de la salle' : 'Fait ✔';
+}
+for (const box of [$('#evActs'), $('#actBody')]) {
+  box.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-actdone],[data-actundo],[data-actdel],[data-actadd],[data-actpick]'); if (!b) return;
+    if ('actadd' in b.dataset) return addAction(box);
+    if ('actpick' in b.dataset) { const t = box.querySelector('[data-acttxt]'); t.value = b.dataset.actpick; return t.focus(); }
+    try {
+      if (b.dataset.actdel) {
+        if (!confirm('Supprimer cette action ?')) return;
+        setPL(await api('/api/actions/delete', { id: Number(b.dataset.actdel) })); afterRoomExtra(); toast('Action supprimée');
+        return;
+      }
+      const done = !!b.dataset.actdone;
+      const r = await api('/api/actions/done', { id: Number(b.dataset.actdone || b.dataset.actundo), done });
+      setPL(r); afterRoomExtra();
+      toast(done ? actDoneMsg(r) : 'Action remise à faire');
+    } catch (err) { toast(err.message, true); }
+  });
+  box.addEventListener('change', (e) => { if (e.target.closest('[data-actkind]')) renderActions(box, box._ctx.ids, box._ctx); });
+  box.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.closest('[data-acttxt]')) { e.preventDefault(); addAction(box); } });
+}
+// depuis l'onglet Salles (salle seule ou salle réunie) ou le planning : matériel ajouté et actions à faire de la salle
+function openRoomExtra(ids, focus = 'notes') {
+  $('#noteTitle').textContent = `${roomsLabel(ids)} — matériel ajouté et actions à faire`;
+  $('#noteBody').innerHTML = ''; $('#actBody').innerHTML = '';
   renderNotes($('#noteBody'), ids);
+  renderActions($('#actBody'), ids);
   $('#noteDlg').showModal();
-  $('#noteBody [data-notetxt]')?.focus();
+  $(focus === 'actions' ? '#actBody [data-acttxt]' : '#noteBody [data-notetxt]')?.focus();
 }
 $('#noteClose').onclick = () => $('#noteDlg').close();
 
 // ----- « Tout démonter » une salle (onglet Salles) : notre matériel revient au stock (celui d'où il est parti au montage,
-// sinon le stock principal), le matériel prêté et le hors stock sont notés démontés, le matériel installé par une société
+// sinon le stock principal), le matériel prêté et le matériel ajouté sont notés démontés, le matériel installé par une société
 // externe n'est plus affiché, et les démontages du planning pas encore validés dans ces salles sont validés
 const CLR = { ids: [], rows: [], lent: [], notes: [], info: [], evs: [] };
 function openClear(ids) {
@@ -2271,7 +2394,7 @@ function renderClear() {
     '<thead><tr><th></th><th>Matériel</th><th>Qté</th><th>Depuis</th><th>Vers</th></tr></thead>'));
   if (CLR.lent.length) h += sec('Matériel prêté, installé par nous', '— noté démonté (rien ne bouge dans le stock)',
     tbl(CLR.lent.map((g, i) => tr(g, `${chk('lent', i, g.on)}<td>${items(g)}</td><td><span class="pill lent">prêt ${esc(g.supplier)}</span><br><span class="muted" style="font-size:12px">${esc(g.client)}</span></td>`))));
-  if (CLR.notes.length) h += sec('Hors stock', '— noté démonté',
+  if (CLR.notes.length) h += sec('Matériel ajouté', '— noté démonté',
     tbl(CLR.notes.map((n, i) => tr(n, `${chk('note', i, n.on)}<td>${esc(noteTxt(n))}</td><td class="muted" style="font-size:12px">${esc(roomsLabel(n.room_ids))}${n.client ? ' · ' + esc(n.client) : ''}</td>`))));
   if (CLR.info.length) h += sec('Installé par une société externe', '— c\'est elle qui le démonte : il n\'est simplement plus affiché dans la salle',
     tbl(CLR.info.map((g, i) => tr(g, `${chk('info', i, g.on)}<td><span class="pill ext">${esc(g.supplier)}</span> ${g.items.length} élément${g.items.length > 1 ? 's' : ''}
@@ -2281,7 +2404,7 @@ function renderClear() {
   $('#clrBody').innerHTML = h || '<p class="muted">Rien n\'est installé dans cette salle.</p>';
   const n = CLR.rows.filter((r) => r.on && r.qty > 0).reduce((a, r) => a + Number(r.qty), 0);
   const on = (list) => list.filter((x) => x.on).length;
-  const parts = [n && `${n} pièce${n > 1 ? 's' : ''} au stock`, on(CLR.lent) && 'matériel prêté démonté', on(CLR.notes) && `${on(CLR.notes)} hors stock`,
+  const parts = [n && `${n} pièce${n > 1 ? 's' : ''} au stock`, on(CLR.lent) && 'matériel prêté démonté', on(CLR.notes) && `matériel ajouté démonté (${on(CLR.notes)})`,
     on(CLR.info) && 'matériel externe plus affiché', on(CLR.evs) && `${on(CLR.evs)} démontage${on(CLR.evs) > 1 ? 's' : ''} validé${on(CLR.evs) > 1 ? 's' : ''}`].filter(Boolean);
   $('#clrSum').textContent = parts.length ? parts.join(' · ') : 'Rien de coché';
   $('#clrGo').disabled = !parts.length;
@@ -2404,7 +2527,7 @@ $('#evOfFile').addEventListener('change', async () => {
   OF.confirmDel = null; $('#ofFile').value = ''; $('#ofErr').textContent = ''; $('#ofDlg').showModal();
   await ofLoadFile(f);
 });
-$('#evRooms').addEventListener('change', () => { renderEvOffers(); renderNotes($('#evNotes'), evRoomsChecked()); });
+$('#evRooms').addEventListener('change', () => { renderEvOffers(); renderNotes($('#evNotes'), evRoomsChecked()); renderActions($('#evActs'), evRoomsChecked(), $('#evActs')._ctx); });
 ['evDate', 'evEndDate'].forEach((id) => $('#' + id).addEventListener('change', renderEvOffers));
 
 

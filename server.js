@@ -202,7 +202,7 @@ function offerMovesList() {
   return db.prepare('SELECT * FROM offer_moves ORDER BY id').all().map((m) => ({ ...m, lines: JSON.parse(m.lines), external: JSON.parse(m.external || '[]') }));
 }
 
-// Matériel hors stock : une note (« 3 multi », « 2 boîtiers HD-SDI/HDMI ») considérée comme installée dans la salle
+// Matériel ajouté : une note (« 3 multi », « 2 boîtiers HD-SDI/HDMI ») considérée comme installée dans la salle
 // dès qu'elle est ajoutée — pas de catalogue, pas de déplacement de stock, pas d'étape « montage » à valider.
 // room_ids : la salle, ou les parties d'une salle réunie (affichée une seule fois). removed_ts : démonté (gardé pour l'historique)
 db.exec(`
@@ -215,6 +215,74 @@ CREATE TABLE IF NOT EXISTS room_notes (
 `);
 function roomNotesList() {
   return db.prepare('SELECT * FROM room_notes WHERE removed_ts IS NULL ORDER BY id').all().map((n) => ({ ...n, room_ids: JSON.parse(n.room_ids) }));
+}
+
+// Actions à faire dans une salle, un jour donné (heure facultative) : « 14:00 ajouter 3 multi », « enlever le pupitre ».
+// Texte libre, rien ne bouge dans le stock. kind : 'ajouter' → une fois fait, devient du matériel ajouté dans la salle ;
+// 'enlever' → une fois fait, le matériel ajouté du même nom est noté démonté ; 'autre' → simple rappel.
+// done_ts : fait ; done_info : ce que « fait » a changé dans le matériel ajouté (pour pouvoir revenir en arrière)
+db.exec(`
+CREATE TABLE IF NOT EXISTS room_actions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  room_ids TEXT NOT NULL, date TEXT NOT NULL, time TEXT, kind TEXT NOT NULL DEFAULT 'autre',
+  qty INTEGER, name TEXT NOT NULL, event_id INTEGER, client TEXT, done_ts TEXT, done_info TEXT
+);
+`);
+const ACTION_KINDS = ['ajouter', 'enlever', 'autre'];
+function roomActionsList() {
+  return db.prepare("SELECT * FROM room_actions ORDER BY date, IFNULL(time, '99:99'), id").all()
+    .map(({ done_info, ...a }) => ({ ...a, room_ids: JSON.parse(a.room_ids) }));
+}
+// « Boîtiers HDMI » = « boitier hdmi » : pour retrouver le matériel ajouté à enlever
+const noteKey = (s) => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().split(/[^a-z0-9/]+/).filter(Boolean).map((w) => w.replace(/(?<=..)[sx]$/, '')).join(' ');
+function setActionDone(id, done) {
+  const a = db.prepare('SELECT * FROM room_actions WHERE id=?').get(id);
+  if (!a) throw new Error('Action introuvable (déjà supprimée ?)');
+  if (!!a.done_ts === done) throw new Error(done ? 'Déjà faite' : 'Pas encore faite');
+  const ids = JSON.parse(a.room_ids);
+  const res = { added: 0, removed: 0, missing: 0 };
+  inTransaction(() => {
+    if (done) {
+      const info = { notes: [] };
+      if (a.kind === 'ajouter') {
+        const r = db.prepare('INSERT INTO room_notes (room_ids, qty, name, event_id, client) VALUES (?,?,?,?,?)').run(a.room_ids, a.qty || 1, a.name, a.event_id, a.client);
+        info.added = Number(r.lastInsertRowid); res.added = a.qty || 1;
+      } else if (a.kind === 'enlever') {
+        // le plus ancien d'abord ; « enlever 1 multi » sur « 3 multi » : il en reste 2 (la partie enlevée est gardée pour l'historique)
+        let left = a.qty || 1;
+        for (const n of roomNotesList().filter((x) => x.room_ids.some((r) => ids.includes(r)) && noteKey(x.name) === noteKey(a.name))) {
+          if (left <= 0) break;
+          const take = Math.min(left, n.qty); left -= take;
+          if (take === n.qty) {
+            db.prepare("UPDATE room_notes SET removed_ts=datetime('now','localtime') WHERE id=?").run(n.id);
+            info.notes.push({ id: n.id });
+          } else {
+            db.prepare('UPDATE room_notes SET qty=qty-? WHERE id=?').run(take, n.id);
+            const r = db.prepare("INSERT INTO room_notes (ts, room_ids, qty, name, event_id, client, removed_ts) VALUES (?,?,?,?,?,?,datetime('now','localtime'))")
+              .run(n.ts, JSON.stringify(n.room_ids), take, n.name, n.event_id, n.client);
+            info.notes.push({ id: n.id, take, split: Number(r.lastInsertRowid) });
+          }
+          res.removed += take;
+        }
+        res.missing = left;
+      }
+      db.prepare("UPDATE room_actions SET done_ts=datetime('now','localtime'), done_info=? WHERE id=?").run(JSON.stringify(info), id);
+    } else {
+      // pas faite finalement : le matériel ajouté revient comme avant (sauf s'il a été démonté entre-temps)
+      const info = jsonOr(a.done_info, {});
+      if (info.added) db.prepare('DELETE FROM room_notes WHERE id=? AND removed_ts IS NULL').run(info.added);
+      for (const x of info.notes || []) {
+        if (x.split) {
+          db.prepare('DELETE FROM room_notes WHERE id=?').run(x.split);
+          db.prepare('UPDATE room_notes SET qty=qty+? WHERE id=?').run(x.take, x.id);
+        } else db.prepare('UPDATE room_notes SET removed_ts=NULL WHERE id=?').run(x.id);
+      }
+      db.prepare('UPDATE room_actions SET done_ts=NULL, done_info=NULL WHERE id=?').run(id);
+    }
+    bumpPlanning();
+  });
+  return { ...res, ...planningData() };
 }
 
 // Matériel des sociétés externes (CAS…) d'une fiche technique, dans les salles :
@@ -295,7 +363,7 @@ function planningData() {
     };
   });
   const offers = offersList(), offerMoves = offerMovesList();
-  return { events, offers, offerMoves, external: externalList(offers, offerMoves), notes: roomNotesList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
+  return { events, offers, offerMoves, external: externalList(offers, offerMoves), notes: roomNotesList(), actions: roomActionsList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
 }
 
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -908,7 +976,7 @@ function undoPhase(b) {
 }
 
 // « Tout démonter » (onglet Salles) : la salle est vidée en une fois. Notre matériel revient au stock, le matériel prêté
-// (installé par nous) et le hors stock sont notés démontés, le matériel installé par une société externe n'est plus affiché,
+// (installé par nous) et le matériel ajouté sont notés démontés, le matériel installé par une société externe n'est plus affiché,
 // et les démontages du planning cochés sont validés (sans rien déplacer de plus).
 // b = { room_ids, lines: [{ item_id, qty, from, to }], managed: [{ offer_id, room_name }], hide: [{ offer_id, room_name }], notes: [id], events: [id] }
 function clearRooms(b) {
@@ -1293,14 +1361,20 @@ function checksList() {
     const id = x.room_ids[0];
     (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`matériel prêté ${x.supplier || 'externe'}${x.room_ids.length > 1 ? ` (${label(x.room_ids)})` : ''}`);
   }
-  // matériel hors stock (notes) : compté une fois, dans la première partie d'une salle réunie
-  for (const n of pd.notes) { const id = n.room_ids[0]; (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`${n.qty} × ${n.name} (hors stock${n.room_ids.length > 1 ? ', ' + label(n.room_ids) : ''})`); }
+  // matériel ajouté (notes) : compté une fois, dans la première partie d'une salle réunie
+  for (const n of pd.notes) { const id = n.room_ids[0]; (inRoom.get(id) || inRoom.set(id, []).get(id)).push(`${n.qty} × ${n.name} (ajouté${n.room_ids.length > 1 ? ', ' + label(n.room_ids) : ''})`); }
   for (const [id, mat] of inRoom) {
     const soon = evs.some((e) => e.room_ids.includes(id) && e.end_date >= today && e.date <= addDaysIso(today, 2));
     if (!soon) add('warn', 'idle', `${id}:${[...new Set(mat)].sort()}`, { date: today, room_id: id, title: 'Matériel en salle, rien de prévu',
       detail: `${names.get(id)?.name} : ${[...new Set(mat)].join(', ')} — aucun événement aujourd'hui ni les 2 prochains jours` });
   }
-  // 8. événements à venir dont le BEO n'a pas de section AV enregistrée (importés avant cette fonction) ou pas de PDF archivé
+  // 8. action à faire dans une salle, prévue un jour passé et pas cochée « fait »
+  for (const a of pd.actions) if (!a.done_ts && a.date < today) {
+    const what = a.kind === 'autre' ? a.name : `${a.kind === 'ajouter' ? 'ajouter' : 'enlever'} ${a.qty} × ${a.name}`;
+    add('warn', 'action', `${a.id}`, { date: a.date, event_id: a.event_id, title: 'Action pas faite',
+      detail: `${label(a.room_ids)}, ${dmy(a.date)}${a.time ? ' à ' + a.time : ''} : ${what}${a.client ? ` (${a.client})` : ''}` });
+  }
+  // 9. événements à venir dont le BEO n'a pas de section AV enregistrée (importés avant cette fonction) ou pas de PDF archivé
   const archived = new Set(Object.values(pd.beoArchive).flatMap((w) => [w.book, ...(w.parts || [])].filter(Boolean).flatMap((x) => x.beos)));
   const byWeek = (pred) => {
     const m = new Map();
@@ -1425,7 +1499,7 @@ const routes = {
     if (!(Array.isArray(b.rooms) && b.rooms.length) && !(Array.isArray(b.managed) && b.managed.length) && (b.client === undefined || String(b.client).trim() === o.client)) return updateOffer(b);
     return journaled('offre-modif', o.filename, `Fiche technique modifiée — ${o.client}${o.version ? ' ' + o.version : ''}`, () => updateOffer(b));
   },
-  // Matériel hors stock (note) : installé dans la salle dès l'ajout, retiré quand il est démonté
+  // Matériel ajouté (note) : installé dans la salle dès l'ajout, retiré quand il est démonté
   'POST /api/notes/add': (b) => {
     const ids = [...new Set((b.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id));
     if (!ids.length) throw new Error('Choisis d\'abord la salle');
@@ -1442,6 +1516,30 @@ const routes = {
   'POST /api/notes/remove': (b) => {
     const r = db.prepare("UPDATE room_notes SET removed_ts=datetime('now','localtime') WHERE id=? AND removed_ts IS NULL").run(Number(b.id));
     if (!r.changes) throw new Error('Déjà démonté (ou introuvable)');
+    bumpPlanning();
+    return planningData();
+  },
+  // Action à faire dans une salle (jour, heure facultative) : ajouter / enlever du matériel (texte libre) ou autre rappel
+  'POST /api/actions/add': (b) => {
+    const ids = [...new Set((b.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id));
+    if (!ids.length) throw new Error('Choisis d\'abord la salle');
+    if (!isDate(b.date)) throw new Error('Choisis le jour');
+    const time = String(b.time || '').trim();
+    if (!isTime(time)) throw new Error('Heure invalide (ex. 14:00)');
+    const kind = ACTION_KINDS.includes(b.kind) ? b.kind : 'autre';
+    const text = String(b.text || '').trim();
+    const line = kind === 'autre' ? { qty: null, name: text } : parseEquipment(text)[0];
+    if (!line?.name || (kind !== 'autre' && !(line.qty > 0))) throw new Error(kind === 'autre' ? 'Écris ce qu\'il faut faire' : 'Écris le matériel, ex. « 3 multi »');
+    const ev = b.event_id ? db.prepare('SELECT id, client FROM planning_events WHERE id=?').get(Number(b.event_id)) : null;
+    db.prepare('INSERT INTO room_actions (room_ids, date, time, kind, qty, name, event_id, client) VALUES (?,?,?,?,?,?,?,?)')
+      .run(JSON.stringify(ids), b.date, time || null, kind, line.qty, line.name.slice(0, 200), ev?.id ?? null, ev?.client ?? (String(b.client || '').trim() || null));
+    bumpPlanning();
+    return planningData();
+  },
+  'POST /api/actions/done': (b) => setActionDone(Number(b.id), b.done !== false),
+  'POST /api/actions/delete': (b) => {
+    const r = db.prepare('DELETE FROM room_actions WHERE id=?').run(Number(b.id));
+    if (!r.changes) throw new Error('Action introuvable (déjà supprimée ?)');
     bumpPlanning();
     return planningData();
   },

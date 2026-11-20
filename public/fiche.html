@@ -49,7 +49,7 @@
   .task { display:grid; grid-template-columns:1.25em 1fr; gap:.5em; align-items:start; }
   .task + .task { margin-top:.4em; }
   .box { width:1.1em; height:1.1em; border:1.4px solid var(--ink); border-radius:.22em; margin-top:.12em; }
-  /* une ligne par salle : salle + libre dès | aujourd'hui (à vérifier / démonter) | demain (à préparer) */
+  /* une ligne par salle : salle + libre dès | aujourd'hui (à faire / démonter) | demain (à préparer) */
   .cols { display:grid; grid-template-columns:7.6em 1fr 1.25fr; gap:.7em; font-size:.75em; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding-bottom:.3em; border-bottom:2px solid var(--ink); }
   .cols b { color:var(--accent); }
   .rrow { display:grid; grid-template-columns:7.6em 1fr 1.25fr; gap:.7em; padding:.45em 0; border-bottom:1px dotted var(--line); break-inside:avoid; }
@@ -64,6 +64,15 @@
   .task.mat b { color:var(--red); }
   .task.mat.stays b { color:var(--green); }
   .clean { color:var(--green); font-size:.85em; margin-top:.2em; }
+  /* actions à faire dans la salle, à leur heure (« 14:00 Ajouter 3 × multi ») */
+  .task .box { display:flex; align-items:center; justify-content:center; font-size:.85em; font-weight:800; line-height:1; }
+  .task.act { margin-top:.35em; }
+  .task.act .time { font-weight:800; margin-right:.4em; font-variant-numeric:tabular-nums; }
+  .task.act .k.aj { color:var(--blue); } .task.act .k.en { color:var(--red); }
+  .task.act .who { color:var(--muted); font-size:.9em; }
+  .task.act .late { margin-left:.4em; font-size:.85em; font-weight:700; color:var(--red); }
+  .task.act.done { color:var(--muted); }
+  .task.act.done > div { text-decoration:line-through; }
   .since { color:var(--muted); font-size:.85em; font-style:italic; margin-left:.4em; }
   .l1 { font-weight:600; }
   .l1 .time { font-variant-numeric:tabular-nums; font-weight:800; margin-right:1.2mm; }
@@ -200,7 +209,7 @@ function externalIn(roomId) {
   }
   return out; // { CAS: 12, 'CAS — Coco 1 + 2 + 3': 37, … }
 }
-// matériel hors stock (notes « 3 multi ») : compté une fois, dans la première partie d'une salle réunie
+// matériel ajouté (notes « 3 multi ») : compté une fois, dans la première partie d'une salle réunie
 function roomsLabel(ids) {
   const names = ids.map((id) => DATA.locations.find((l) => l.id === id)?.name || '?');
   const parts = names.map((n) => /^(.*?)\s*(\d+)$/.exec(n));
@@ -210,19 +219,32 @@ function roomsLabel(ids) {
 function notesIn(roomId) {
   return (DATA.notes || []).filter((n) => n.room_ids[0] === roomId).map((n) => `${n.qty} × ${n.name}${n.room_ids.length > 1 ? ` (${roomsLabel(n.room_ids)})` : ''}`);
 }
+// actions à faire dans la salle (« 14:00 ajouter 3 multi ») : celles du jour, et celles des jours passés pas encore faites ;
+// une action sur une salle réunie compte une fois, dans sa première partie
+const actionsIn = (roomId, day, late = true) => (DATA.actions || []).filter((a) => a.room_ids[0] === roomId && (a.date === day || (late && a.date < day && !a.done_ts)));
+const byWhen = (a, b) => a.date.localeCompare(b.date) || (a.time || '99').localeCompare(b.time || '99');
+// rowIds : salles de la ligne — la salle de l'action n'est précisée que si elle est différente ;
+// rowClients : sociétés de la ligne — la société de l'action n'est précisée que si c'est une autre
+function actHtml(a, day, rowIds, rowClients) {
+  const verb = a.kind === 'ajouter' ? '<b class="k aj">Ajouter</b> ' : a.kind === 'enlever' ? '<b class="k en">Enlever</b> ' : '';
+  const what = a.kind === 'autre' ? esc(a.name) : `${a.qty} × ${esc(a.name)}`;
+  const same = a.room_ids.length === rowIds.length && a.room_ids.every((id) => rowIds.includes(id));
+  const late = a.date < day ? `<span class="late">prévue ${esc(toDate(a.date).toLocaleDateString('fr-BE', { weekday: 'short', day: '2-digit', month: '2-digit' }))}${a.time ? ' ' + esc(a.time) : ''}, pas faite</span>` : '';
+  return `<div class="task act ${a.done_ts ? 'done' : ''}"><span class="box">${a.done_ts ? '✓' : ''}</span><div>${a.time && !late ? `<span class="time">${esc(a.time)}</span>` : ''}${verb}${what}${same ? '' : ` <u>${esc(roomsLabel(a.room_ids))}</u>`}${a.client && !rowClients.some((c) => sameClient(c, a.client)) ? ` <span class="who">· ${esc(a.client)}</span>` : ''}${late}</div></div>`;
+}
 // heure à laquelle la salle se libère : fin du dernier événement « client » du jour
 // (un montage / démontage créé par une fiche technique, sans heure de fin, est notre travail : il ne bloque pas la salle)
 const isOurJob = (e) => !e.end && e.tags.length && e.tags.every((t) => PHASES.includes(t));
 const endOf = (evs) => evs.filter((e) => !isOurJob(e)).map((e) => e.end || '?').sort().pop() || '';
 
-// Une ligne par salle : [ salle + « libre dès » ] [ aujourd'hui : à vérifier / matériel à démonter ] [ demain : à préparer ]
+// Une ligne par salle : [ salle + « libre dès » ] [ aujourd'hui : à vérifier / actions à faire / matériel à démonter ] [ demain : à préparer ]
 function roomRows(areas, day) {
   const tomorrow = addDays(day, 1);
   const locs = DATA.locations.filter((l) => l.kind === 'salle').sort((a, b) => a.id - b.id);
   const onDay = (e, d) => e.date <= d && d <= e.end_date;
   const tasks1 = tasksOn(tomorrow);
   let html = '';
-  const stats = { rooms: 0, mat: 0 };
+  const stats = { rooms: 0, mat: 0, acts: 0 };
   for (const [label, test] of areas) {
     const rows = [];
     for (const l of locs.filter((x) => test(x.floor))) {
@@ -230,11 +252,12 @@ function roomRows(areas, day) {
       const tmw = tasks1.filter((e) => e.room_ids.includes(l.id)).sort((a, b) => (a.start || '99').localeCompare(b.start || '99'));
       const stock = stockIn(l.id), ext = externalIn(l.id), hs = notesIn(l.id);
       const hasMat = stock.length || Object.keys(ext).length || hs.length;
-      if (!today.length && !tmw.length && !hasMat) continue;
+      const acts = actionsIn(l.id, day), actsT = actionsIn(l.id, tomorrow, false);
+      if (!today.length && !tmw.length && !hasMat && !acts.length && !actsT.length) continue;
       // le matériel peut rester si la même société occupe encore la salle demain
       const tomorrowAll = DATA.events.filter((e) => onDay(e, tomorrow) && e.room_ids.includes(l.id));
       const stays = hasMat && today.some((t) => tomorrowAll.some((n) => n.id === t.id || sameClient(n.client, t.client)));
-      const room = { name: l.name, stock, ext, hs, hasMat, stays };
+      const room = { id: l.id, name: l.name, stock, ext, hs, hasMat, stays, acts, actsT };
       // salles voisines au même programme (Coco 1 + 2 + 3 réunies) : une seule ligne, le matériel reste détaillé par salle
       const sig = JSON.stringify([today.map((e) => e.id), tmw.map((e) => e.id)]);
       const prev = rows[rows.length - 1];
@@ -254,6 +277,12 @@ function roomRows(areas, day) {
         const chips = left.map((t) => `<span class="chip d">${t === 'Démontage' ? 'démontage à faire' : 'montage pas validé'}</span>`).join(' ');
         return `<div class="ev0">${e.start ? `<span class="time">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</span>` : ''}${esc(e.client)}${chips ? ' ' + chips : ''}</div>`;
       }).join('');
+      // actions à faire, par heure (d'abord celles des jours passés pas encore faites)
+      const rowIds = r.rooms.map((x) => x.id);
+      const acts = r.rooms.flatMap((x) => x.acts).sort(byWhen);
+      stats.acts += acts.filter((a) => !a.done_ts).length;
+      const actsHtml = acts.map((a) => actHtml(a, day, rowIds, r.today.map((e) => e.client))).join('');
+      const actsTmw = r.rooms.flatMap((x) => x.actsT).sort(byWhen).map((a) => actHtml(a, tomorrow, rowIds, r.tmw.map((e) => e.client))).join('');
       // matériel regroupé : une offre sur « Coco » (salles réunies) n'est listée qu'une fois
       const groups = [];
       for (const x of r.rooms.filter((y) => y.hasMat)) {
@@ -266,12 +295,13 @@ function roomRows(areas, day) {
           if (!x.stays) stats.mat++;
           const where = x.names.length < r.rooms.length ? ` <u>${esc(x.names.join(' + '))}</u>` : '';
           const extTxt = Object.entries(x.ext).map(([s, n]) => `matériel prêté ${s} (${n} pièce${n > 1 ? 's' : ''})`).join(', ');
-          const hsTxt = x.hs.length ? `<i>hors stock :</i> ${esc(x.hs.join(', '))}` : '';
+          // matériel ajouté : « hors fiche technique » seulement quand du matériel de la fiche est aussi à démonter ici
+          const hsTxt = x.hs.length ? `${x.stock.length || extTxt ? '<i>hors fiche technique :</i> ' : ''}${esc(x.hs.join(', '))}` : '';
           return `<div class="task mat ${x.stays ? 'stays' : ''}"><span class="box"></span><div>${x.stays ? '<b>Peut rester</b> (même société demain)' : '<b>À démonter</b>'}${where} : ${[esc([...x.stock, extTxt].filter(Boolean).join(', ')), hsTxt].filter(Boolean).join(' · ')}</div></div>`;
         }).join('');
-      const tmwHtml = r.tmw.length ? r.tmw.map((e) => taskHtml({ ...e, _day: tomorrow })).join('') : '<div class="none">—</div>';
+      const tmwHtml = r.tmw.length || actsTmw ? r.tmw.map((e) => taskHtml({ ...e, _day: tomorrow })).join('') + actsTmw : '<div class="none">—</div>';
       html += `<div class="rrow"><div class="rc"><div class="rname">${esc(r.rooms.map((x) => x.name).join(' + '))}</div>${free}</div>
-        <div class="tc">${todayHtml}${mat}</div><div class="mc">${tmwHtml}</div></div>`;
+        <div class="tc">${todayHtml}${actsHtml}${mat}</div><div class="mc">${tmwHtml}</div></div>`;
     }
   }
   return { html, stats };
@@ -285,7 +315,7 @@ function halfHtml(side, day) {
   return `<div class="half">
     <div class="head"><img src="/mascotte/normal.svg" alt=""><div><div class="t">Fiche du jour</div><div class="d">${esc(zone)}</div></div>
       <div class="side">Préparation du <b>${esc(longDay(day))}</b><br>pour le <b>${esc(longDay(tomorrow))}</b></div></div>
-    <div class="cols"><span>Salle</span><span>Aujourd'hui · à vérifier / démonter</span><span><b>Demain</b> · à préparer</span></div>
+    <div class="cols"><span>Salle</span><span>Aujourd'hui · à faire / démonter</span><span><b>Demain</b> · à préparer</span></div>
     ${html || '<div class="none">Aucune salle à vérifier ni à préparer dans cette zone.</div>'}
     <div class="notes"><div class="nt">Notes</div><div class="lines"></div></div>
     <div class="foot"><span>Dolce AV</span><span>imprimé le ${esc(new Date().toLocaleString('fr-BE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}</span></div>
@@ -308,7 +338,7 @@ function render() {
   $('#sheet').innerHTML = halfHtml('left', day) + halfHtml('right', day) + '<div class="fold">✂ PLIER ICI</div>';
   const n1 = tasksOn(addDays(day, 1)).length;
   const st = roomRows(AREAS, day).stats;
-  $('#sub').textContent = `${st.rooms} salle${st.rooms > 1 ? 's' : ''} à passer · ${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${st.mat} salle${st.mat > 1 ? 's' : ''} avec matériel à démonter`;
+  $('#sub').textContent = `${st.rooms} salle${st.rooms > 1 ? 's' : ''} à passer · ${st.acts ? `${st.acts} action${st.acts > 1 ? 's' : ''} à faire aujourd'hui · ` : ''}${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${st.mat} salle${st.mat > 1 ? 's' : ''} avec matériel à démonter`;
   history.replaceState(null, '', `?date=${day}`);
   document.title = `Fiche du jour — ${day}`;
   requestAnimationFrame(fit);
