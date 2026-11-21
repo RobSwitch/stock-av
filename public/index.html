@@ -436,6 +436,21 @@
   .evsec .it select { max-width:100%; flex:1; min-width:200px; }
   .evsec .btn.small { padding:4px 9px; font-size:12.5px; }
   .evsec a.ofr { vertical-align:1px; }
+  /* fenêtre « à vérifier avant la fiche du jour » */
+  .chksec { display:flex; align-items:center; gap:8px; margin:16px 0 2px; font-weight:700; }
+  .chksec .muted { font-weight:400; font-size:12.5px; }
+  .chksec .btn { margin-left:auto; padding:4px 10px; font-size:12.5px; }
+  .chkit { display:flex; align-items:center; gap:8px; flex-wrap:wrap; padding:8px 0; border-top:1px solid var(--line); font-size:13.5px; }
+  .chkit .grow { flex:1; min-width:240px; }
+  .chkit .when { font-weight:700; color:var(--err); font-variant-numeric:tabular-nums; margin-right:4px; }
+  .chkit.today .when { color:var(--muted); }
+  .chkit .what { font-weight:700; }
+  .chkit .sub { color:var(--muted); font-size:12.5px; margin-top:2px; }
+  .chkit .btn { padding:5px 12px; font-size:13px; }
+  .chkit.ok .grow { opacity:.55; }
+  .chkit .state { font-size:12.5px; font-weight:700; padding:2px 9px; border-radius:999px; white-space:nowrap; }
+  .chkit.ok .state { background:var(--green-soft); color:var(--green-ink); }
+  .chkit.no .state { background:var(--red-soft); color:var(--red-ink); }
   /* onglet Salles : salle réunie (même matériel pour plusieurs parties) */
   .grid.rooms .merged { font-size:11px; font-weight:600; color:var(--muted); margin:-4px 0 4px; }
   .hsin .lbl { color:var(--orange-ink); }
@@ -652,7 +667,7 @@
       <button class="wk" id="plToday" title="Revenir à aujourd'hui (T)">Aujourd'hui</button>
       <div class="seg" id="plView"><button data-v="grid" title="Grille des salles">▦ Grille</button><button data-v="list" title="Liste jour par jour">☰ Liste</button></div>
       <label class="plsearch" title="Rechercher dans la semaine affichée ( / )"><svg><use href="#i-search"/></svg><input id="plQ" placeholder="Rechercher : client, salle, description…" autocomplete="off"></label>
-      <button class="wk" id="plFiche" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux)">🖨 Fiche du jour</button>
+      <button class="wk" id="plFiche" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux). D'abord : ce qui n'a pas été validé hier ou pour aujourd'hui">🖨 Fiche du jour</button>
       <button class="btn" id="plNew" title="Nouvel événement (N)">＋ Nouvel événement</button>
     </div>
     <div class="plbar plbar2">
@@ -886,8 +901,24 @@
     <button type="button" class="btn" id="undoGo">Annuler l'import</button>
   </div>
 </dialog>
+<dialog id="chkDlg">
+  <h2>Avant la fiche du jour : à vérifier</h2>
+  <div style="width:min(760px,calc(100vw - 90px))">
+    <p class="muted" style="margin:0 0 4px;font-size:13.5px">Ces choses auraient dû être faites <b>hier</b> (ou les jours d'avant) ou être <b>prêtes pour aujourd'hui</b>, mais personne ne les a validées dans l'application.
+      Pour chaque ligne : <b>✓ Fait</b> si c'est fait (on te l'a dit, tu l'as vu) — c'est validé comme dans le planning ; <b>Pas fait</b> sinon — la ligne reste à faire et apparaît sur la fiche.</p>
+    <div id="chkBody"></div>
+    <p class="warn" id="chkErr"></p>
+  </div>
+  <div class="row dlgfoot" style="align-items:center">
+    <button type="button" class="btn ghost" id="chkClose">Fermer</button>
+    <span class="muted" id="chkLeft" style="flex:1;font-size:13px"></span>
+    <button type="button" class="btn ghost" id="chkRest" title="Toutes les lignes sans réponse : pas fait (elles restent à faire et apparaissent sur la fiche)">Le reste : pas fait</button>
+    <button type="button" class="btn" id="chkGo">🖨 Ouvrir la fiche du jour</button>
+  </div>
+</dialog>
 <div class="toast" id="toast"></div>
 
+<script src="/fiche-check.js"></script>
 <script>
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
@@ -1810,10 +1841,11 @@ $('#retGo').onclick = async () => {
 
 // ---- Onglet "Planning BEO" : planning géré directement dans l'application ----
 let _v = 'grid', _dn = 'compact'; try { _v = localStorage.getItem('plView') || 'grid'; _dn = localStorage.getItem('plDensity') || 'compact'; } catch {}
-const PL = { events: [], offers: [], offerMoves: [], external: [], notes: [], actions: [], itemMap: {}, beoArchive: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
+const PL = { events: [], offers: [], offerMoves: [], external: [], notes: [], actions: [], itemMap: {}, beoArchive: {}, ficheCheck: {}, status: {}, week: null, day: null, loaded: false, view: _v, gridArea: null, density: _dn };
 // réponse du serveur (planningData) → état du planning
 function setPL(r) {
   PL.events = r.events; PL.offers = r.offers; PL.offerMoves = r.offerMoves; PL.external = r.external || []; PL.notes = r.notes || []; PL.actions = r.actions || []; PL.itemMap = r.itemMap; PL.beoArchive = r.beoArchive || {}; PL.status = r.status;
+  if (r.ficheCheck) PL.ficheCheck = r.ficheCheck;
 }
 const PL_COLOR = { red: 'À préparer', green: 'Prêt', yellow: 'Prospect' };
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -2129,6 +2161,7 @@ function renderGrid(days, weekEvs, hit, today) {
 function renderPlanning() {
   // le planning a changé (import, modification, autre poste) : le compteur « Contrôle » est recalculé
   if (PL.status?.version !== CK.version) { CK.version = PL.status?.version; refreshChecks(); }
+  if ($('#chkDlg').open) renderCheck(); // vérification avant la fiche du jour : suit les validations (fenêtre du matériel, autre poste)
   const today = isoToday();
   if (!PL.week) PL.week = weekStart(today);
   $('#plSource').innerHTML = planningSourceHtml();
@@ -2204,7 +2237,154 @@ function setFull(on) {
 $('#plFull').onclick = () => setFull(!document.body.classList.contains('plfull'));
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('plfull')) setFull(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('plfull') && !document.querySelector('dialog[open]')) setFull(false); });
-$('#plFiche').onclick = () => window.open(`/fiche.html?date=${isoToday()}`, '_blank', 'noopener'); // date du jour au moment du clic
+// ----- Fiche du jour : d'abord ce qui aurait dû être fait hier (ou les jours d'avant) ou être prêt pour aujourd'hui, et qui
+// n'est pas validé dans l'application (public/fiche-check.js). Chaque ligne : « ✓ Fait » (validé comme dans le planning, avec
+// la fenêtre du matériel si une fiche technique en a) ou « Pas fait » (la ligne reste à faire, sur la fiche). La fiche ne
+// s'ouvre qu'une fois que chaque ligne a une réponse ; les « pas fait » sont gardés pour la journée (serveur, tous les postes).
+const CHK = { day: null, ids: [], snap: {}, undo: {}, busy: false };
+const openFiche = (day) => window.open(`/fiche.html?date=${day}`, '_blank', 'noopener');
+$('#plFiche').onclick = async () => {
+  const day = isoToday(); // date du jour au moment du clic
+  try { setPL(await api('/api/planning')); renderPlanning(); } catch {} // validations faites entre-temps sur un autre poste
+  const list = FicheCheck.items(PL, day);
+  if (!list.length) return openFiche(day);
+  Object.assign(CHK, { day, ids: list.map((x) => x.id), snap: {}, undo: {}, busy: false });
+  $('#chkErr').textContent = '';
+  renderCheck(); $('#chkDlg').showModal();
+  ($('#chkGo').disabled ? $('#chkBody [data-chk="do"]') : $('#chkGo'))?.focus();
+};
+// étapes validées par « ✓ Fait » : les étapes passées ; pour une case d'aujourd'hui, son montage s'il en a un (jamais le
+// démontage de ce soir), sinon rien (la case passe simplement en « Prêt »)
+const chkPhases = (x) => (x.kind === 'phase' ? x.phases : x.kind === 'ready' && pendingPhases(x.ev).includes('Montage') ? ['Montage'] : []);
+// fiche technique liée : la validation d'une étape passe par la fenêtre du matériel (stock ⇄ salle)
+const chkNeedsWindow = (x) => chkPhases(x).length > 0 && offersForEvent(x.ev).length > 0;
+// tout est installé par une société externe (rien pour nous) → ['CAS'] ; sinon null
+function chkExtOnly(ev) {
+  const its = offersForEvent(ev).flatMap(({ r }) => r.items || []);
+  const sup = [...new Set(its.filter((i) => i.kind === 'externe' && !i.managed).map((i) => i.supplier))];
+  return sup.length && !its.some((i) => i.kind === 'dolce' || (i.kind === 'externe' && i.managed)) ? sup : null;
+}
+function chkSub(x) {
+  if (x.kind === 'action') return [x.action.time ? `à ${x.action.time}` : '', x.action.client || ''].filter(Boolean).join(' · ');
+  const e = x.ev, parts = [];
+  if (e.start) parts.push(`${e.start}–${e.end || '?'}`);
+  if (e.date !== e.end_date) parts.push(`du ${dayLabel(e.date)} au ${dayLabel(e.end_date)}`);
+  if (e.detail) parts.push(e.detail);
+  if (x.kind === 'phase' && x.phases.includes('Démontage')) {
+    // ce que l'application compte encore dans la salle : notre matériel, le matériel prêté, le matériel ajouté
+    const ext = chkExtOnly(e);
+    const inRoom = [...e.room_ids.flatMap(roomStuff), ...lentIn(e.room_ids).map(lentTxt), ...notesIn(e.room_ids).map(noteTxt)];
+    parts.push(ext ? `installé par ${ext.join(', ')} : rien à démonter pour nous, juste à valider`
+      : inRoom.length ? `encore compté dans la salle : ${inRoom.join(', ')}` : 'rien d\'enregistré dans la salle');
+  }
+  return parts.join(' · ');
+}
+function renderCheck() {
+  const day = CHK.day;
+  const fresh = new Map(FicheCheck.items(PL, day).map((x) => [x.id, x]));
+  for (const [id, x] of fresh) { CHK.snap[id] = x; if (!CHK.ids.includes(id)) CHK.ids.push(id); } // ligne apparue entre-temps (autre poste)
+  const skip = FicheCheck.skipped(PL, day);
+  const sec = { before: [], today: [] };
+  // validée : n'est plus dans la liste (dans l'application, c'est fait)
+  for (const id of CHK.ids) sec[CHK.snap[id].when].push({ x: CHK.snap[id], state: !fresh.has(id) ? 'ok' : skip.has(id) ? 'no' : '' });
+  const line = ({ x, state }) => {
+    const ev = x.ev, a = x.action;
+    const when = x.when === 'today' ? 'aujourd\'hui' : x.date === addDays(day, -1) ? 'hier' : dayLabel(x.date);
+    const tg = x.kind === 'phase' ? (x.phases.includes('Démontage') ? 'demontage' : 'setup') : x.kind === 'ready' ? 'urgent' : '';
+    const sub = chkSub(x);
+    // démontage validé : le matériel ajouté pendant l'événement est peut-être parti avec (texte libre, pas lié au stock)
+    const left = state === 'ok' && x.kind === 'phase' && x.phases.includes('Démontage') ? notesOn(PL.events.find((e) => e.id === ev.id) || ev) : [];
+    const btns = state === 'ok' ? `${left.length ? `<button type="button" class="btn ghost" data-chk="notes" data-id="${x.id}" title="Noter aussi comme démonté : ${esc(left.map(noteTxt).join(', '))}">🧰 ${esc(left.map(noteTxt).join(', '))} : démonté aussi</button>` : ''}<span class="state">✓ Validé</span>${CHK.undo[x.id] ? `<button type="button" class="btn ghost" data-chk="undo" data-id="${x.id}" title="Annuler cette validation">↩</button>` : ''}`
+      : state === 'no' ? `<span class="state">Pas fait · reste sur la fiche</span><button type="button" class="btn ghost" data-chk="unskip" data-id="${x.id}" title="Changer la réponse">↩</button>`
+      : `<button type="button" class="btn ok" data-chk="do" data-id="${x.id}">✓ Fait</button><button type="button" class="btn ghost" data-chk="skip" data-id="${x.id}">Pas fait</button>`;
+    return `<div class="chkit ${x.when} ${state}"><div class="grow"><span class="when">${esc(when)}</span><span class="tg ${tg}" style="margin:0 6px 0 0">${esc(FicheCheck.title(x))}</span>
+      <span class="what">${esc(a ? FicheCheck.actionText(a) : ev.client)}</span> <span class="muted">· ${esc(roomsLabel(ev ? ev.room_ids : a.room_ids))}</span>
+      ${sub ? `<div class="sub">${esc(sub)}</div>` : ''}</div>${btns}</div>`;
+  };
+  const head = (k, title, sub) => `<div class="chksec">${title} <span class="muted">${sub}</span>${sec[k].filter((r) => !r.state).length > 1
+    ? `<button type="button" class="btn ghost" data-chk="all" data-sec="${k}" title="Tout valider d'un coup (ce qui a du matériel de fiche technique à déplacer reste à valider ligne par ligne)">✓ Tout est fait</button>` : ''}</div>`;
+  $('#chkBody').innerHTML = (sec.before.length ? head('before', 'Hier et avant', `— pas validé (${FicheCheck.BACK} derniers jours)`) + sec.before.map(line).join('') : '')
+    + (sec.today.length ? head('today', 'Pour aujourd\'hui', '— ces cases auraient dû être prêtes (préparées hier)') + sec.today.map(line).join('') : '');
+  const left = CHK.ids.filter((id) => fresh.has(id) && !skip.has(id)).length;
+  $('#chkLeft').textContent = left ? `Encore ${left} ligne${left > 1 ? 's' : ''} sans réponse` : 'Tout est vérifié ✔';
+  $('#chkGo').disabled = left > 0;
+  $('#chkGo').title = left ? 'Réponds d\'abord à chaque ligne : ✓ Fait ou Pas fait' : '';
+  $('#chkRest').style.display = left ? '' : 'none';
+}
+// « Pas fait » : gardé pour la journée (la fenêtre ne le redemande pas, la fiche le montre à faire)
+async function chkSkip(ids, on) {
+  const s = FicheCheck.skipped(PL, CHK.day);
+  for (const id of ids) if (on) s.add(id); else s.delete(id);
+  PL.ficheCheck = (await api('/api/fiche/check', { date: CHK.day, skipped: [...s] })).ficheCheck;
+}
+// « ✓ Fait » : la même validation que dans le planning → true si c'est validé ; false si la fenêtre du matériel est
+// nécessaire (ouverte si open, sinon laissée pour la validation ligne par ligne)
+async function chkDo(x, open = true) {
+  if (x.kind === 'action') {
+    setPL(await api('/api/actions/done', { id: x.action.id, done: true })); afterRoomExtra();
+    CHK.undo[x.id] = async () => { setPL(await api('/api/actions/done', { id: x.action.id, done: false })); afterRoomExtra(); };
+    return true;
+  }
+  const cur = () => PL.events.find((e) => e.id === x.ev.id);
+  const ev = cur();
+  if (!ev) throw new Error(`${x.ev.client} : cette case n'est plus dans le planning (supprimée ?)`);
+  const phases = chkPhases({ ...x, ev });
+  if (!phases.length) { // case sans montage ni démontage : « Prêt », comme dans le menu de la case
+    const before = ev.color || '';
+    setPL(await api('/api/planning/event', evBody(ev, 'green'))); renderPlanning();
+    CHK.undo[x.id] = async () => { setPL(await api('/api/planning/event', evBody(cur(), before))); renderPlanning(); };
+    return true;
+  }
+  // seulement ces étapes-là (une étape à venir de la même case reste à faire) ; avec la fenêtre du matériel si fiche technique
+  const ofs = offersForEvent(ev);
+  if (ofs.length) { if (open) openPhase(ev, evBody(ev, 'green'), phases, ofs); return false; }
+  for (const p of phases) setPL(await api('/api/planning/phase', { event: evBody(cur(), cur().color || 'red'), phase: p, lines: [], external: [] }));
+  renderPlanning();
+  CHK.undo[x.id] = async () => {
+    for (const p of [...phases].reverse()) setPL(await api('/api/planning/phase/undo', { event: evBody(cur(), cur().color || 'red'), phase: p, lines: [] }));
+    renderPlanning();
+  };
+  return true;
+}
+async function chkAll(sec) {
+  const fresh = new Map(FicheCheck.items(PL, CHK.day).map((x) => [x.id, x]));
+  const skip = FicheCheck.skipped(PL, CHK.day);
+  const list = CHK.ids.map((id) => fresh.get(id)).filter((x) => x && x.when === sec && !skip.has(x.id));
+  if (!list.length) return;
+  const easy = list.filter((x) => x.kind === 'action' || !chkNeedsWindow(x));
+  const hard = list.length - easy.length;
+  if (!(await confirmBox('Tout est fait ?', `<p>Valider ${easy.length > 1 ? `les <b>${easy.length}</b> lignes` : '<b>la</b> ligne'} sans réponse de « ${sec === 'today' ? 'Pour aujourd\'hui' : 'Hier et avant'} » ?</p>`
+    + (hard ? `<p class="muted">${hard} ligne${hard > 1 ? 's ont' : ' a'} du matériel de fiche technique à déplacer : à valider avec son bouton ✓ Fait.</p>` : ''), { yes: 'Tout valider' }))) return;
+  for (const x of easy) await chkDo(x, false);
+  if (hard) $('#chkErr').textContent = `Encore ${hard} ligne${hard > 1 ? 's' : ''} à valider une par une (bouton ✓ Fait) : du matériel de fiche technique est à déplacer.`;
+}
+$('#chkBody').addEventListener('click', async (e) => {
+  const b = e.target.closest('[data-chk]'); if (!b || CHK.busy) return;
+  $('#chkErr').textContent = '';
+  const id = b.dataset.id;
+  CHK.busy = true;
+  $('#chkBody').querySelectorAll('button').forEach((x) => { x.disabled = true; }); // un clic = un envoi
+  try {
+    const k = b.dataset.chk;
+    if (k === 'skip' || k === 'unskip') await chkSkip([id], k === 'skip');
+    else if (k === 'do') await chkDo(CHK.snap[id]);
+    else if (k === 'undo') { const u = CHK.undo[id]; delete CHK.undo[id]; await u?.(); }
+    else if (k === 'notes') {
+      const ev = PL.events.find((e) => e.id === CHK.snap[id].ev.id) || CHK.snap[id].ev;
+      for (const n of notesOn(ev)) setPL(await api('/api/notes/remove', { id: n.id }));
+      afterRoomExtra();
+    }
+    else if (k === 'all') await chkAll(b.dataset.sec);
+  } catch (err) { $('#chkErr').textContent = err.message; }
+  finally { CHK.busy = false; renderCheck(); }
+});
+$('#chkRest').onclick = async () => {
+  const fresh = new Set(FicheCheck.items(PL, CHK.day).map((x) => x.id)), skip = FicheCheck.skipped(PL, CHK.day);
+  try { await chkSkip(CHK.ids.filter((id) => fresh.has(id) && !skip.has(id)), true); } catch (err) { $('#chkErr').textContent = err.message; }
+  renderCheck();
+};
+$('#chkClose').onclick = () => $('#chkDlg').close();
+$('#chkGo').onclick = () => { $('#chkDlg').close(); openFiche(CHK.day); };
 $('#plToday').onclick =() => { PL.week = weekStart(isoToday()); PL.day = isoToday(); $('#plQ').value = ''; renderPlanning(); };
 // Raccourcis clavier du planning : ← / → semaine, T aujourd'hui, / rechercher (Échap : vider la recherche), N nouvel événement
 // (jamais pendant une saisie ni quand une fenêtre est ouverte)

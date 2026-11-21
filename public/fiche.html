@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dolce AV — Fiche du jour</title>
 <script src="/print-panel.js"></script>
+<script src="/fiche-check.js"></script>
 <link rel="icon" type="image/png" href="/icon.png">
 <style>
   /* Fiche du jour : A4 paysage, pliable en deux (gauche : Oasis + Rez-de-chaussée ; droite : Étage +1 + Autres) — notes en bas de chaque moitié */
@@ -113,6 +114,21 @@
   body.gray .sheet { filter:grayscale(1); }
   @media print { #printDlg { display:none !important; } }
   .fit-warn { max-width:297mm; margin:0 auto; color:#8a5a00; background:#fff4d6; padding:6px 12px; border-radius:8px; font-size:13px; display:none; }
+  /* vérification avant la fiche (fiche-check.js) : choses d'hier / pour aujourd'hui pas validées ni marquées « pas fait » */
+  .chk-warn { max-width:297mm; margin:12px auto 0; color:#8f1d22; background:#fde8e8; border:1px solid #f3c2c4; padding:8px 14px; border-radius:10px; font-size:13.5px; display:none; gap:8px; align-items:baseline; }
+  #chkDlg { border:0; border-radius:16px; padding:20px 22px; box-shadow:0 20px 50px rgba(0,0,0,.3); font-family:inherit; color:var(--ink); width:min(620px,92vw); }
+  #chkDlg::backdrop { background:rgba(15,12,10,.45); }
+  #chkDlg h2 { margin:0 0 8px; font-size:18px; }
+  #chkDlg p { margin:0 0 10px; font-size:13.5px; }
+  #chkDlg ul { margin:0 0 12px; padding-left:18px; max-height:45vh; overflow:auto; font-size:13px; }
+  #chkDlg li { margin:3px 0; }
+  #chkDlg li b { color:var(--red); }
+  #chkDlg .btns { display:flex; gap:8px; justify-content:flex-end; }
+  #chkDlg button { font:inherit; font-weight:600; padding:8px 14px; border-radius:9px; border:1px solid #ece7e2; background:#fff; cursor:pointer; }
+  #chkDlg button.main { background:var(--accent); border-color:var(--accent); color:#fff; }
+  /* sur la fiche : montage / démontage d'un jour passé pas validé */
+  .task.act.latep .k { color:var(--red); }
+  @media print { .chk-warn, #chkDlg { display:none !important; } }
 </style>
 </head>
 <body>
@@ -126,7 +142,15 @@
   <button class="main" id="print">🖨 Imprimer…</button>
 </div>
 <div id="printDlg"></div>
+<p class="chk-warn" id="chkWarn"></p>
 <p class="fit-warn" id="fitWarn"></p>
+<dialog id="chkDlg">
+  <h2>Avant d'imprimer</h2>
+  <p>Ces choses auraient dû être faites hier ou être prêtes pour aujourd'hui, mais elles ne sont <b>ni validées</b> dans l'application <b>ni marquées « pas fait »</b> :</p>
+  <ul id="chkList"></ul>
+  <p style="color:var(--muted)">Si c'est fait, valide-le d'abord (planning → « 🖨 Fiche du jour ») : sinon la fiche imprimée ne sera pas juste.</p>
+  <div class="btns"><button type="button" class="main" id="chkNo">Ne pas imprimer</button><button type="button" id="chkYes">Imprimer quand même</button></div>
+</dialog>
 <div class="sheet" id="sheet"></div>
 
 <script>
@@ -249,8 +273,11 @@ function roomRows(areas, day) {
   const locs = DATA.locations.filter((l) => l.kind === 'salle').sort((a, b) => a.id - b.id);
   const onDay = (e, d) => e.date <= d && d <= e.end_date;
   const tasks1 = tasksOn(tomorrow);
+  // montages / démontages des jours passés pas validés (fiche-check.js) : encore à faire aujourd'hui ;
+  // un événement sur une salle réunie compte une fois, dans sa première partie
+  const lateAll = FicheCheck.items(DATA, day).filter((x) => x.kind === 'phase');
   let html = '';
-  const stats = { rooms: 0, mat: 0, acts: 0 };
+  const stats = { rooms: 0, mat: 0, acts: 0, late: lateAll.length };
   for (const [label, test] of areas) {
     const rows = [];
     for (const l of locs.filter((x) => test(x.floor))) {
@@ -259,11 +286,12 @@ function roomRows(areas, day) {
       const stock = stockIn(l.id), ext = externalIn(l.id), hs = notesIn(l.id);
       const hasMat = stock.length || Object.keys(ext).length || hs.length;
       const acts = actionsIn(l.id, day), actsT = actionsIn(l.id, tomorrow, false);
-      if (!today.length && !tmw.length && !hasMat && !acts.length && !actsT.length) continue;
+      const late = lateAll.filter((x) => x.ev.room_ids[0] === l.id);
+      if (!today.length && !tmw.length && !hasMat && !acts.length && !actsT.length && !late.length) continue;
       // le matériel peut rester si la même société occupe encore la salle demain
       const tomorrowAll = DATA.events.filter((e) => onDay(e, tomorrow) && e.room_ids.includes(l.id));
       const stays = hasMat && today.some((t) => tomorrowAll.some((n) => n.id === t.id || sameClient(n.client, t.client)));
-      const room = { id: l.id, name: l.name, stock, ext, hs, hasMat, stays, acts, actsT };
+      const room = { id: l.id, name: l.name, stock, ext, hs, hasMat, stays, acts, actsT, late };
       // salles voisines au même programme (Coco 1 + 2 + 3 réunies) : une seule ligne, le matériel reste détaillé par salle
       const sig = JSON.stringify([today.map((e) => e.id), tmw.map((e) => e.id)]);
       const prev = rows[rows.length - 1];
@@ -281,11 +309,13 @@ function roomRows(areas, day) {
       // démontage d'une fiche où tout est installé par une société externe : c'est elle qui démonte, rien pour nous
       const todayHtml = r.today.map((e) => {
         const left = e.tags.filter((t) => PHASES.includes(t) && !(e.done || []).includes(t));
-        const chips = left.map((t) => {
+        // case encore « À préparer » le jour même, sans montage ni démontage à faire (ceux-là ont leur propre étiquette) : pas prête
+        const notReady = e.color === 'red' && !(e.done || []).length && !FicheCheck.isOurJob(e) && !left.length;
+        const chips = (notReady ? ['<span class="chip d" title="Case encore « À préparer » dans l\'application">pas prêt</span>'] : []).concat(left.map((t) => {
           const ext = t === 'Démontage' && extOnly(e);
           return ext ? `<span class="chip x" title="Matériel installé et démonté par la société externe : rien à démonter pour nous">démontage par ${esc(ext.join(', '))}</span>`
             : `<span class="chip d">${t === 'Démontage' ? 'démontage à faire' : 'montage pas validé'}</span>`;
-        }).join(' ');
+        })).join(' ');
         return `<div class="ev0">${e.start ? `<span class="time">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</span>` : ''}${esc(e.client)}${chips ? ' ' + chips : ''}</div>`;
       }).join('');
       // actions à faire, par heure (d'abord celles des jours passés pas encore faites)
@@ -293,6 +323,14 @@ function roomRows(areas, day) {
       const acts = r.rooms.flatMap((x) => x.acts).sort(byWhen);
       stats.acts += acts.filter((a) => !a.done_ts).length;
       const actsHtml = acts.map((a) => actHtml(a, day, rowIds, r.today.map((e) => e.client))).join('');
+      // montages / démontages d'un jour passé, pas validés : à faire (ou à valider dans l'application)
+      const lateHtml = r.rooms.flatMap((x) => x.late).map((x) => {
+        const e = x.ev, ext = x.phases.includes('Démontage') && extOnly(e);
+        const same = e.room_ids.length === rowIds.length && e.room_ids.every((id) => rowIds.includes(id));
+        const when = toDate(x.date).toLocaleDateString('fr-BE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+        return `<div class="task act latep"><span class="box"></span><div><b class="k">${esc(x.phases.join(' + '))}</b> ${esc(e.client)}${same ? '' : ` <u>${esc(roomsLabel(e.room_ids))}</u>`}`
+          + `${ext ? ` <span class="who">· par ${esc(ext.join(', '))}</span>` : ''}<span class="late">prévu ${esc(when)}, pas validé</span></div></div>`;
+      }).join('');
       const actsTmw = r.rooms.flatMap((x) => x.actsT).sort(byWhen).map((a) => actHtml(a, tomorrow, rowIds, r.tmw.map((e) => e.client))).join('');
       // matériel regroupé : une offre sur « Coco » (salles réunies) n'est listée qu'une fois
       const groups = [];
@@ -317,7 +355,7 @@ function roomRows(areas, day) {
         }).join('');
       const tmwHtml = r.tmw.length || actsTmw ? r.tmw.map((e) => taskHtml({ ...e, _day: tomorrow })).join('') + actsTmw : '<div class="none">—</div>';
       html += `<div class="rrow"><div class="rc"><div class="rname">${esc(r.rooms.map((x) => x.name).join(' + '))}</div>${free}</div>
-        <div class="tc">${todayHtml}${actsHtml}${mat}</div><div class="mc">${tmwHtml}</div></div>`;
+        <div class="tc">${todayHtml}${lateHtml}${actsHtml}${mat}</div><div class="mc">${tmwHtml}</div></div>`;
     }
   }
   return { html, stats };
@@ -354,11 +392,41 @@ function render() {
   $('#sheet').innerHTML = halfHtml('left', day) + halfHtml('right', day) + '<div class="fold">✂ PLIER ICI</div>';
   const n1 = tasksOn(addDays(day, 1)).length;
   const st = roomRows(AREAS, day).stats;
-  $('#sub').textContent = `${st.rooms} salle${st.rooms > 1 ? 's' : ''} à passer · ${st.acts ? `${st.acts} action${st.acts > 1 ? 's' : ''} à faire aujourd'hui · ` : ''}${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${st.mat} salle${st.mat > 1 ? 's' : ''} avec matériel à démonter`;
+  $('#sub').textContent = `${st.rooms} salle${st.rooms > 1 ? 's' : ''} à passer · ${st.late ? `${st.late} montage${st.late > 1 ? 's' : ''} / démontage${st.late > 1 ? 's' : ''} d'avant pas validé${st.late > 1 ? 's' : ''} · ` : ''}${st.acts ? `${st.acts} action${st.acts > 1 ? 's' : ''} à faire aujourd'hui · ` : ''}${n1} tâche${n1 > 1 ? 's' : ''} pour demain · ${st.mat} salle${st.mat > 1 ? 's' : ''} avec matériel à démonter`;
   history.replaceState(null, '', `?date=${day}`);
   document.title = `Fiche du jour — ${day}`;
+  renderWarn();
   requestAnimationFrame(fit);
 }
+
+// ---- Vérification (fiche-check.js) : sur la fiche d'aujourd'hui, ce qui aurait dû être fait hier ou être prêt pour aujourd'hui
+// et qui n'a ni été validé dans l'application, ni marqué « pas fait » dans la fenêtre du planning
+const unchecked = () => ($('#day').value === isoOf(new Date()) ? FicheCheck.open(DATA, $('#day').value) : []);
+const checkLine = (x) => {
+  const what = x.action ? FicheCheck.actionText(x.action) : x.ev.client;
+  const when = x.when === 'today' ? 'aujourd\'hui' : toDate(x.date).toLocaleDateString('fr-BE', { weekday: 'short', day: '2-digit', month: '2-digit' });
+  return `<b>${esc(FicheCheck.title(x))}</b> — ${esc(what)} · ${esc(roomsLabel(x.ev ? x.ev.room_ids : x.action.room_ids))} <span style="color:var(--muted)">(${esc(when)})</span>`;
+};
+function renderWarn() {
+  const list = unchecked(), n = list.length, s = n > 1 ? 's' : '';
+  $('#chkWarn').style.display = n ? 'flex' : 'none';
+  $('#chkWarn').innerHTML = n ? `<b>⚠</b><span><b>${n} chose${s} d'hier ou pour aujourd'hui pas validée${s} dans l'application</b> (ni marquée${s} « pas fait ») : la fiche risque de ne pas être juste.
+    Vérifie d'abord avec le bouton « 🖨 Fiche du jour » du planning.</span>` : '';
+}
+// avant d'imprimer / d'enregistrer : la fiche telle que le planning est maintenant, et on prévient s'il reste des lignes sans réponse
+async function readyToPrint() {
+  try { await load(); } catch {}
+  const list = unchecked();
+  if (!list.length) return true;
+  $('#chkList').innerHTML = list.map((x) => `<li>${checkLine(x)}</li>`).join('');
+  const d = $('#chkDlg');
+  d.returnValue = ''; d.showModal(); $('#chkNo').focus();
+  return new Promise((ok) => d.addEventListener('close', () => ok(d.returnValue === 'yes'), { once: true }));
+}
+$('#chkYes').onclick = () => $('#chkDlg').close('yes');
+$('#chkNo').onclick = () => $('#chkDlg').close('no');
+// retour sur la fiche (après une validation dans le planning) : elle se met à jour
+window.addEventListener('focus', () => { if (DATA && !$('#chkDlg').open) load().catch(() => {}); });
 
 $('#day').addEventListener('change', render);
 $('#prev').onclick = () => { $('#day').value = addDays($('#day').value, -1); render(); };
@@ -369,6 +437,7 @@ let printReady = false;
 $('#print').onclick = async () => {
   const dlg = $('#printDlg');
   if (dlg.classList.contains('open')) { dlg.classList.remove('open'); return; }
+  if (!(await readyToPrint())) return;
   dlg.classList.add('open');
   if (printReady) return;
   printReady = true;
@@ -384,6 +453,7 @@ $('#print').onclick = async () => {
 };
 // application installée : PDF enregistré directement ; navigateur : impression (« Enregistrer au format PDF »)
 $('#pdf').onclick = async () => {
+  if (!(await readyToPrint())) return;
   if (window.dolceav?.savePdf) {
     $('#pdf').disabled = true; $('#pdf').textContent = 'Création du PDF…';
     try { await window.dolceav.savePdf(`Fiche du jour ${$('#day').value}.pdf`); }

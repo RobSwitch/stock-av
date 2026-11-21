@@ -376,7 +376,18 @@ const doubleOf = (ev, exceptId) => planningEvents().find((x) => x.id !== exceptI
 function planningData() {
   const events = planningEvents();
   const offers = offersList(), offerMoves = offerMovesList();
-  return { events, offers, offerMoves, external: externalList(offers, offerMoves), notes: roomNotesList(), actions: roomActionsList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, status: beoStatus() };
+  return { events, offers, offerMoves, external: externalList(offers, offerMoves), notes: roomNotesList(), actions: roomActionsList(), itemMap: metaJson('offer_item_map'), beoArchive: metaJson('beo_archive').weeks || {}, ficheCheck: metaJson('fiche_check'), status: beoStatus() };
+}
+// Vérification avant la fiche du jour (public/fiche-check.js) : lignes marquées « pas fait » ce jour-là
+// { 'AAAA-MM-JJ': { ts, skipped: ['ev:12', 'act:3'] } } — les 30 derniers jours seulement
+function saveFicheCheck(b) {
+  if (!isDate(b.date)) throw new Error('Date invalide');
+  const skipped = [...new Set((Array.isArray(b.skipped) ? b.skipped : []).map(String).filter((k) => /^(ev|act):\d+$/.test(k)))];
+  const all = metaJson('fiche_check');
+  all[b.date] = { ts: new Date().toISOString(), skipped };
+  const keep = Object.keys(all).sort().slice(-30);
+  metaSet('fiche_check', JSON.stringify(Object.fromEntries(keep.map((d) => [d, all[d]]))));
+  return { ficheCheck: metaJson('fiche_check') };
 }
 
 const PL_TAGS = ['Montage', 'Répétition', 'Show', 'Démontage', 'Récup', 'Travaux'];
@@ -1540,6 +1551,7 @@ const routes = {
   'GET /api/beo/archive': () => beoArchive(),
   'POST /api/planning/phase': (b) => validatePhase(b),
   'POST /api/planning/phase/undo': (b) => undoPhase(b),
+  'POST /api/fiche/check': (b) => saveFicheCheck(b),
   'POST /api/rooms/clear': (b) => clearRooms(b),
   'POST /api/offers/save': (b) => {
     const label = `Fiche technique — ${String(b.client || '').trim()}${b.version ? ' ' + b.version : ''}`;
