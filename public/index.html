@@ -76,14 +76,13 @@
   nav button svg { width:17px; height:17px; pointer-events:none; }
   nav button:hover { background:var(--surface-2); color:var(--ink); }
   nav button.active { background:var(--accent-soft); color:var(--accent); font-weight:600; }
-  .theme { margin-left:auto; display:flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px; }
+  .theme { display:inline-flex; background:var(--surface-2); border:1px solid var(--line); border-radius:999px; padding:3px; }
   .theme button { border:0; background:none; color:var(--muted); font:inherit; font-size:12.5px; padding:5px 11px; border-radius:999px; cursor:pointer; }
   .theme button.on { background:var(--card); color:var(--ink); box-shadow:var(--shadow-sm); font-weight:600; }
   /* écran étroit : le bandeau défile avec la page (sinon il mange la hauteur), onglets plus serrés */
   @media (max-width: 760px) {
     header { position:static; padding:8px 12px; gap:10px; }
     nav button { padding:6px 10px; font-size:13px; }
-    .theme { margin-left:0; }
     main { padding:0 12px; }
   }
 
@@ -106,6 +105,9 @@
   button.btn.ghost:hover, a.btn:hover { background:var(--surface-2); border-color:var(--line); }
   button.btn.ok { background:var(--green); border-color:var(--green); box-shadow:0 2px 8px color-mix(in srgb, var(--green) 30%, transparent); }
   button.btn.ok:hover { filter:brightness(1.05); }
+  button.btn.danger { background:var(--err); border-color:var(--err); box-shadow:0 2px 8px color-mix(in srgb, var(--err) 30%, transparent); }
+  button.btn.danger:hover { filter:brightness(1.07); }
+  #askBody p { margin:0 0 8px; }
   button.btn.teal { background:var(--teal); border-color:var(--teal); box-shadow:0 2px 8px color-mix(in srgb, var(--teal) 30%, transparent); }
   button.btn.teal:hover { background:var(--teal-hover); border-color:var(--teal-hover); }
   button.small, button.btn.small { padding:5px 10px; font-size:13px; border-radius:8px; }
@@ -282,20 +284,28 @@
   .seg button:hover { color:var(--ink); }
   .seg button:disabled { color:var(--ink); cursor:default; }
   .seg button.active { background:var(--card); color:var(--ink); box-shadow:var(--shadow-sm); font-weight:600; }
-  .plbar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+  /* une seule barre au-dessus de la grille : ligne 1 = semaine, vue, recherche, actions ; ligne 2 = étage (ou jour), légende, affichage */
+  .plbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
   .plbar .plareas button { padding:7px 16px; font-size:14px; }
   .plbar .daychips { flex:1; }
-  .plweek { margin-left:auto; font-size:13.5px; font-weight:500; color:var(--muted); white-space:nowrap; display:inline-flex; align-items:center; gap:8px; }
-  .plweek .wk { min-width:30px; height:30px; padding:0 8px; display:inline-grid; place-items:center; white-space:nowrap; border:1px solid var(--line); background:var(--card); border-radius:9px; font-size:11.5px; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
-  /* écran étroit : la barre de la semaine passe à la ligne au lieu de déborder */
-  @media (max-width: 760px) { .plweek { margin-left:0; flex-wrap:wrap; white-space:normal; } .plbar .plareas { width:100%; } }
-  .plweek .wk:hover, .plquick .wk:hover { background:var(--surface-2); }
-  /* Fiche du jour + Cette semaine : juste avant « Semaine du … au … » */
-  .plquick { margin-left:auto; display:inline-flex; gap:8px; }
-  .plquick + .plweek { margin-left:0; }
-  .plquick .wk { height:30px; padding:0 12px; white-space:nowrap; border:1px solid var(--line); background:var(--card); border-radius:9px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
-  @media (max-width: 760px) { .plquick { margin-left:0; } }
+  .plweek { font-size:14px; font-weight:600; white-space:nowrap; display:inline-flex; align-items:center; gap:8px; }
+  .wk { min-width:32px; height:34px; padding:0 11px; display:inline-grid; place-items:center; white-space:nowrap; border:1px solid var(--line); background:var(--card); border-radius:9px; font:inherit; font-size:13px; font-weight:600; cursor:pointer; color:var(--ink); box-shadow:var(--shadow-sm); }
+  .wk:hover { background:var(--surface-2); }
+  .plweek .wk { padding:0 8px; font-size:11.5px; }
+  .plsearch { display:block; position:relative; flex:1 1 220px; min-width:150px; }
+  .plsearch svg { position:absolute; left:11px; top:50%; width:16px; height:16px; transform:translateY(-50%); color:var(--muted); pointer-events:none; }
+  .plsearch input { width:100%; height:34px; padding-left:34px; }
+  .plbar #plNew { white-space:nowrap; }
+  .pllegend { display:inline-flex; gap:14px; flex-wrap:wrap; margin-left:auto; font-size:12.5px; color:var(--muted); cursor:default; }
+  .plopts { display:inline-flex; gap:8px; align-items:center; }
   .plsize button { padding:4px 10px; font-size:12px; }
+  /* écran étroit : tout passe à la ligne au lieu de déborder */
+  @media (max-width: 760px) { .plweek { flex-wrap:wrap; white-space:normal; } .plbar .plareas, .plsearch { flex-basis:100%; width:100%; } .pllegend { margin-left:0; } }
+  /* onglet Matériel : Stock / Inventaire / Historique + Déplacer */
+  .matbar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+  .matbar .seg button { padding:7px 16px; font-size:14px; }
+  .matbar button.btn.on { background:var(--accent-soft); color:var(--accent); border-color:var(--accent-soft); box-shadow:none; cursor:default; }
+  svg.ico { width:16px; height:16px; flex:none; }
 
   /* ---- Planning : grille (cases pleines, bord à bord ; rien en hauteur fixe dans les cases) ---- */
   .gridwrap { overflow:auto; max-height:75vh; border-radius:14px; background:var(--card); box-shadow:var(--shadow); }
@@ -332,9 +342,9 @@
   .gridwrap.compact .ofrs { padding-top:1px; display:inline; }
   .gridwrap.compact td.empty[data-new]:hover::after { padding-top:5px; }
   /* plein écran */
-  body.plfull header, body.plfull #plControls, body.plfull #plSource { display:none; }
+  body.plfull header, body.plfull #plSource { display:none; }
   body.plfull main { margin:8px auto; padding:0 10px; }
-  body.plfull .gridwrap { max-height:calc(100vh - 62px); }
+  body.plfull .gridwrap { max-height:calc(100vh - 112px); }
   /* événement dans une case : la couleur est portée par la case (td.fill-*) ; pas de hauteur fixe → la ligne s'agrandit */
   .pc { padding:6px 8px 7px 11px; box-sizing:border-box; overflow:hidden; cursor:default; transition:background .12s; }
   .pc .t { font-weight:700; color:var(--muted); }
@@ -345,10 +355,12 @@
   .pc .tg { font-size:10px; padding:0 6px; }
   .pc .stk { font-size:10px; color:var(--muted); margin-top:2px; }
   /* plusieurs événements dans la même case : chacun garde sa couleur, l'un sous l'autre */
-  .pc:not(:only-child).red { background:var(--red-soft); box-shadow:inset 4px 0 0 var(--red); }
+  .pc:not(:only-child).red { background:var(--red-pale); box-shadow:inset 4px 0 0 var(--red-line); }
+  .pc:not(:only-child).red.due { background:var(--red-soft); box-shadow:inset 4px 0 0 var(--red); }
   .pc:not(:only-child).green { background:var(--green-soft); box-shadow:inset 4px 0 0 var(--green); }
   .pc:not(:only-child).yellow { background:var(--amber-soft); box-shadow:inset 4px 0 0 var(--amber); }
-  .pc:not(:only-child).split { background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
+  .pc:not(:only-child).split { background:linear-gradient(to bottom, var(--green) 50%, var(--red-line) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-pale) 50%); }
+  .pc:not(:only-child).split.due { background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
   .pc + .pc { border-top:1px solid var(--line); }
   .avx { float:right; margin:0 0 0 4px; font-size:11px; font-weight:800; color:var(--accent); cursor:help; }
   /* clic sur une case avec un BEO : Modifier / Voir le BEO */
@@ -367,12 +379,17 @@
   .beoav .xtra { background:var(--amber-soft); border-radius:4px; padding:0 4px; }
   a.btn.small { padding:4px 10px; font-size:12.5px; border-radius:8px; }
   table.pg td.fill { background:var(--card); box-shadow:inset 4px 0 0 var(--line); }
-  table.pg td.fill-red { background:var(--red-soft); box-shadow:inset 4px 0 0 var(--red); }
+  /* « À préparer » : rouge pâle ; rouge vif seulement quand c'est pour aujourd'hui ou demain (.due) */
+  :root { --red-pale:color-mix(in srgb, var(--red-soft) 40%, var(--card)); --red-line:color-mix(in srgb, var(--red) 50%, var(--card)); }
+  table.pg td.fill-red { background:var(--red-pale); box-shadow:inset 4px 0 0 var(--red-line); }
+  table.pg td.fill-red.due { background:var(--red-soft); box-shadow:inset 4px 0 0 var(--red); }
   table.pg td.fill-green { background:var(--green-soft); box-shadow:inset 4px 0 0 var(--green); }
   table.pg td.fill-yellow { background:var(--amber-soft); box-shadow:inset 4px 0 0 var(--amber); }
   /* montage validé (haut, vert) / démontage encore à faire (bas, rouge) */
-  table.pg td.fill-split { box-shadow:none; background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
-  .ev.split { background:linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); border-left-color:var(--green); }
+  table.pg td.fill-split { box-shadow:none; background:linear-gradient(to bottom, var(--green) 50%, var(--red-line) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-pale) 50%); }
+  table.pg td.fill-split.due { background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%) left top / 4px 100% no-repeat, linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
+  .ev.split { background:linear-gradient(to bottom, var(--green-soft) 50%, var(--red-pale) 50%); border-left-color:var(--green); }
+  .ev.split.due { background:linear-gradient(to bottom, var(--green-soft) 50%, var(--red-soft) 50%); }
   .tg.ok { background:var(--green); color:#fff; }
   td.empty[data-new] { cursor:pointer; }
   td.empty[data-new]:hover { background:var(--surface-2); }
@@ -453,12 +470,13 @@
   .daychip.active.today { box-shadow:inset 0 -3px 0 rgba(255,255,255,.6); }
   .daychip.zero { opacity:.5; }
   .dot { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:6px; vertical-align:-1px; }
-  .dot.red { background:var(--red); } .dot.green { background:var(--green); } .dot.yellow { background:var(--amber); }
+  .dot.red { background:var(--red); } .dot.redl { background:var(--red-pale); box-shadow:inset 0 0 0 2px var(--red-line); } .dot.green { background:var(--green); } .dot.yellow { background:var(--amber); }
   .dot.split { background:linear-gradient(to bottom, var(--green) 50%, var(--red) 50%); }
   .plday { margin:20px 0 10px; font-size:18px; text-transform:capitalize; }
   .plsum { color:var(--muted); font-size:13px; margin:-2px 0 10px; }
   .ev { display:flex; gap:14px; background:var(--card); border:0; border-left:4px solid var(--line); border-radius:12px; padding:11px 15px; margin-bottom:8px; box-shadow:var(--shadow-sm), 0 0 0 1px var(--line); }
-  .ev.red { border-left-color:var(--red); background:var(--red-soft); }
+  .ev.red { border-left-color:var(--red-line); background:var(--red-pale); }
+  .ev.red.due:not(.split) { border-left-color:var(--red); background:var(--red-soft); }
   .ev.green { border-left-color:var(--green); background:var(--green-soft); }
   .ev.yellow { border-left-color:var(--amber); background:var(--amber-soft); }
   .ev[data-edit] { cursor:pointer; transition:transform .12s, box-shadow .12s; }
@@ -539,31 +557,20 @@
   <symbol id="i-move" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h13l-3-3M20 16H7l3 3"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 4.5 3.4 8 8 9 4.6-1 8-4.5 8-9V6z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
-  <symbol id="i-gear" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-gear"viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/></symbol>
 </svg>
 <header>
   <h1 class="brand"><img src="/mascotte/normal.svg" alt="">Dolce AV <small id="ver"></small></h1>
   <nav id="nav">
     <button data-tab="planning" class="active"><svg><use href="#i-cal"/></svg>Planning BEO</button>
     <button data-tab="lieux"><svg><use href="#i-door"/></svg>Salles</button>
-    <button data-tab="stock"><svg><use href="#i-box"/></svg>Stock</button>
-    <button data-tab="inventaire"><svg><use href="#i-list"/></svg>Inventaire</button>
-    <button data-tab="mouvement"><svg><use href="#i-move"/></svg>Déplacer</button>
-    <button data-tab="historique"><svg><use href="#i-clock"/></svg>Historique</button>
+    <button data-tab="materiel"><svg><use href="#i-box"/></svg>Matériel</button>
     <button data-tab="controle"><svg><use href="#i-check"/></svg>Contrôle<span class="navcount" id="ckCount"></span></button>
     <button data-tab="admin"><svg><use href="#i-gear"/></svg>Gestion</button>
   </nav>
-  <div class="theme" id="theme" title="Apparence"><button data-t="auto">Auto</button><button data-t="light">Clair</button><button data-t="dark">Sombre</button></div>
 </header>
 <main>
-  <section id="tab-inventaire" class="hidden">
-    <div class="card row">
-      <label style="flex:1">Recherche<input id="q" placeholder="micro, batterie, HDMI…"></label>
-      <label>Catégorie<select id="catFilter"><option value="">Toutes</option></select></label>
-    </div>
-    <div class="card"><table><thead><tr><th>Matériel</th><th>Catégorie</th><th>Total</th><th>Où ?</th></tr></thead><tbody id="invBody"></tbody></table></div>
-  </section>
-
   <section id="tab-lieux" class="hidden">
     <div class="card row">
       <div class="seg" id="lieuView" style="margin-bottom:2px"><button type="button" data-lv="nous">Notre matériel</button><button type="button" data-lv="ext" title="Matériel des sociétés externes (CAS…) actuellement dans les salles">Sociétés externes <span class="count" id="lieuExtN"></span></button></div>
@@ -576,16 +583,36 @@
     <div id="lieuxGrid"></div>
   </section>
 
-  <section id="tab-stock" class="hidden">
+  <!-- Matériel : Stock, Inventaire, Historique + « Déplacer du matériel » (même onglet, sous-vues) -->
+  <section id="tab-materiel" class="hidden">
+    <div class="matbar">
+      <div class="seg" id="matView"><button type="button" data-mv="stock">Stock</button><button type="button" data-mv="inventaire">Inventaire</button><button type="button" data-mv="historique">Historique</button></div>
+      <span style="flex:1"></span>
+      <button type="button" class="btn" id="matMove"><svg class="ico"><use href="#i-move"/></svg>Déplacer du matériel</button>
+    </div>
+  <div id="mat-stock" class="matv hidden">
     <div class="card row">
       <label style="flex:1;min-width:240px">Rechercher un matériel<input id="stQ" placeholder="ex : pupitre, micro, dalle…" autocomplete="off"></label>
       <label>Catégorie<select id="stCat"><option value="">Toutes</option></select></label>
       <label class="chk" style="padding-bottom:8px"><input type="checkbox" id="stEmpty"> Afficher aussi le matériel absent du stock</label>
     </div>
     <div id="stockGrid"></div>
-  </section>
+  </div>
 
-  <section id="tab-mouvement" class="hidden">
+  <div id="mat-inventaire" class="matv hidden">
+    <div class="card row">
+      <label style="flex:1">Recherche<input id="q" placeholder="micro, batterie, HDMI…"></label>
+      <label>Catégorie<select id="catFilter"><option value="">Toutes</option></select></label>
+    </div>
+    <div class="card"><table><thead><tr><th>Matériel</th><th>Catégorie</th><th>Total</th><th>Où ?</th></tr></thead><tbody id="invBody"></tbody></table></div>
+  </div>
+
+  <div id="mat-historique" class="matv hidden">
+    <p class="muted" style="margin:0 0 12px">Un déplacement par ligne : clique dessus pour voir le matériel concerné.</p>
+    <div id="histList"></div>
+  </div>
+
+  <div id="mat-mouvement" class="matv hidden">
     <div class="card">
       <h2><span class="step">1</span> D'où vers où ?</h2>
       <div class="row">
@@ -615,42 +642,30 @@
       </div>
       <p class="muted" id="mvSummary" style="margin:10px 0 0"></p>
     </div>
+  </div>
   </section>
 
   <section id="tab-planning">
-    <!-- Grille en premier : le choix de l'étage est collé juste au-dessus, les réglages (semaine, vue, recherche) en dessous -->
+    <!-- Une seule barre au-dessus de la grille : 1) semaine, vue, recherche, actions ; 2) étage (ou jour), légende, affichage -->
     <div class="plbar">
+      <span class="plweek"><button class="wk" id="plPrev" title="Semaine précédente (←)">◀</button><span id="plWeekInfo"></span><button class="wk" id="plNext" title="Semaine suivante (→)">▶</button></span>
+      <button class="wk" id="plToday" title="Revenir à aujourd'hui (T)">Aujourd'hui</button>
+      <div class="seg" id="plView"><button data-v="grid" title="Grille des salles">▦ Grille</button><button data-v="list" title="Liste jour par jour">☰ Liste</button></div>
+      <label class="plsearch" title="Rechercher dans la semaine affichée ( / )"><svg><use href="#i-search"/></svg><input id="plQ" placeholder="Rechercher : client, salle, description…" autocomplete="off"></label>
+      <button class="wk" id="plFiche" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux)">🖨 Fiche du jour</button>
+      <button class="btn" id="plNew" title="Nouvel événement (N)">＋ Nouvel événement</button>
+    </div>
+    <div class="plbar plbar2">
       <div class="seg plareas" id="plAreas"></div>
       <div class="daychips" id="plDays"></div>
-      <span class="plquick">
-        <button class="wk" id="plFiche" title="Tâches à faire : ce qui est à préparer pour demain et ce qui reste aujourd'hui (A4 paysage, pliable en deux)">🖨 Fiche du jour</button>
-        <button class="wk" id="plToday" title="Revenir à la semaine d'aujourd'hui">Cette semaine</button></span>
-      <span class="plweek"><button class="wk" id="plPrev2" title="Semaine précédente">◀</button><span id="plWeekInfo"></span><button class="wk" id="plNext2" title="Semaine suivante">▶</button>
+      <span class="pllegend" id="plLegend" title="Clique sur une case : Prêt, Actions, Modifier… ; sur une case vide pour ajouter un événement">
+        <span title="À préparer, pour aujourd'hui ou demain (ou déjà en cours)"><i class="dot red"></i>À préparer — bientôt</span><span title="À préparer, à partir d'après-demain"><i class="dot redl"></i>plus tard</span><span><i class="dot green"></i>Prêt</span><span><i class="dot yellow"></i>Prospect</span></span>
+      <span class="plopts">
         <span class="seg plsize" id="plDensity" title="Taille des cases de la grille"><button data-d="compact">Compacte</button><button data-d="detail">Détaillée</button></span>
         <button class="wk" id="plFull" title="Afficher la grille sur tout l'écran (Échap pour sortir)">⛶ Plein écran</button></span>
     </div>
     <div id="plBody"></div>
-    <div class="card" id="plControls" style="margin-top:14px">
-      <div class="row" style="align-items:center;margin-bottom:12px">
-        <div class="seg"><button id="plPrev" title="Semaine précédente">◀</button><button id="plWeekLbl" disabled style="min-width:230px;font-weight:600"></button><button id="plNext" title="Semaine suivante">▶</button></div>
-        <div class="seg" id="plView"><button data-v="grid">▦ Grille</button><button data-v="list">☰ Liste</button></div>
-        <span style="flex:1"></span>
-        <button class="btn" id="plNew">＋ Nouvel événement</button>
-      </div>
-      <div class="row">
-        <label style="flex:1;min-width:220px">Rechercher (client, salle, description…)<input id="plQ" placeholder="ex : HUSQVARNA, Coco 2, LCD…" autocomplete="off"></label>
-      </div>
-      <div class="legend" id="plLegend" style="margin:12px 0 0">
-        <span><i class="dot red"></i>À préparer</span><span><i class="dot green"></i>Prêt</span><span><i class="dot yellow"></i>Prospect</span>
-        <span class="muted" style="margin-left:auto">Clique sur une case pour la modifier, sur une case vide pour ajouter.</span>
-      </div>
-    </div>
     <div class="plsrc" id="plSource" style="margin-top:16px"></div>
-  </section>
-
-  <section id="tab-historique" class="hidden">
-    <p class="muted" style="margin:0 0 12px">Un déplacement par ligne : clique dessus pour voir le matériel concerné.</p>
-    <div id="histList"></div>
   </section>
 
   <section id="tab-controle" class="hidden">
@@ -695,6 +710,10 @@
     <div class="card">
       <h2>Matériel retiré</h2>
       <table><thead><tr><th>Date</th><th>Matériel</th><th>Qté</th><th>Retiré de</th><th>Statut</th><th>Raison</th></tr></thead><tbody id="retiredBody"></tbody></table>
+    </div>
+    <div class="card">
+      <h2>Apparence <span class="muted" style="font-size:13px;font-weight:500">— sur ce poste</span></h2>
+      <div class="theme" id="theme"><button data-t="auto" title="Suit le réglage de Windows">Auto</button><button data-t="light">Clair</button><button data-t="dark">Sombre</button></div>
     </div>
   </section>
 </main>
@@ -850,6 +869,14 @@
     <button type="button" class="btn" id="msgOk">OK</button>
   </div>
 </dialog>
+<dialog id="askDlg">
+  <h2 id="askTitle"></h2>
+  <div id="askBody" style="width:min(480px,86vw);font-size:14px"></div>
+  <div class="row" style="margin-top:16px;justify-content:flex-end">
+    <button type="button" class="btn ghost" id="askNo">Annuler</button>
+    <button type="button" class="btn" id="askYes">OK</button>
+  </div>
+</dialog>
 <dialog id="undoDlg">
   <h2>Annuler cet import ?</h2>
   <div id="undoBody" style="width:min(620px,88vw);max-height:60vh;overflow:auto;font-size:14px"></div>
@@ -887,6 +914,19 @@ function msgBox(title, html) {
   return new Promise((ok) => $('#msgDlg').addEventListener('close', ok, { once: true }));
 }
 $('#msgOk').onclick = () => $('#msgDlg').close();
+// Question avant une action (à la place de la fenêtre grise du navigateur) → 'yes', 'no' ou '' (Échap)
+// danger : bouton rouge, et c'est « Annuler » qui est sélectionné (Entrée ne supprime pas par erreur)
+function askBox(title, html, { yes = 'OK', no = 'Annuler', danger = false } = {}) {
+  const d = $('#askDlg');
+  $('#askTitle').textContent = title; $('#askBody').innerHTML = html;
+  $('#askYes').textContent = yes; $('#askNo').textContent = no;
+  $('#askYes').classList.toggle('danger', danger);
+  d.returnValue = ''; d.showModal(); (danger ? $('#askNo') : $('#askYes')).focus();
+  return new Promise((ok) => d.addEventListener('close', () => ok(d.returnValue), { once: true }));
+}
+const confirmBox = async (title, html, opts) => (await askBox(title, html, opts)) === 'yes';
+$('#askYes').onclick = () => $('#askDlg').close('yes');
+$('#askNo').onclick = () => $('#askDlg').close('no');
 // Échec d'un enregistrement : ce qu'il faut savoir avant de recommencer
 const failHtml = (err, what) => `<p><b>${esc(err.message)}</b></p>` + (err.server
   ? `<p>Rien n'a été enregistré. Pour recommencer, choisis à nouveau ${what} : l'aperçu sera refait à partir du planning tel qu'il est maintenant.</p>`
@@ -1161,22 +1201,24 @@ $('#lieuClear').onclick = () => { $('#lieuQ').value = ''; renderLieux(); $('#lie
 // Raccourcis sur une salle (onglet "Salles")
 const mainStock = () => D.locations.find((l) => l.kind === 'stock' && l.name === 'Stock principal') || D.locations.find((l) => l.kind === 'stock');
 function openMovement() {
-  document.querySelector('nav button[data-tab="mouvement"]').click();
+  showTab('materiel'); showMat('mouvement');
   window.scrollTo({ top: 0 });
 }
 // Vider : tout le contenu de la salle dans la liste de déplacement, destination = stock principal
-function roomEmpty(id) {
-  if (cart.length && !confirm('Remplacer la liste de déplacement en cours par le contenu de cette salle ?')) return;
+const replaceCart = (what) => !cart.length || confirmBox('Remplacer la liste en cours ?',
+  `<p>La liste de déplacement contient déjà ${cart.length} référence${cart.length > 1 ? 's' : ''}. Elle sera remplacée par ${what}.</p>`, { yes: 'Remplacer la liste' });
+async function roomEmpty(id) {
+  if (!(await replaceCart('le contenu de cette salle'))) return;
   openMovement();
   $('#mvFrom').value = String(id); $('#mvTo').value = '';
   renderMoveForm();
   fillCartFromSource();
 }
 // Amener du matériel : stock principal → cette salle, prêt à choisir le matériel
-function roomFill(id) {
+async function roomFill(id) {
   const st = mainStock();
   if (!st) return toast('Aucun stock défini', true);
-  if (cart.length && !confirm('Remplacer la liste de déplacement en cours ?')) return;
+  if (!(await replaceCart('une liste vide, pour amener du matériel dans cette salle'))) return;
   cart.length = 0;
   openMovement();
   $('#mvFrom').value = String(st.id);   // ne s'applique que si le stock contient du matériel
@@ -1309,8 +1351,8 @@ function fillCartFromSource() {
   renderMoveForm();
   toast(`${all.length} référence${all.length > 1 ? 's' : ''} ajoutée${all.length > 1 ? 's' : ''} à la liste`);
 }
-$('#mvAll').onclick = () => {
-  if (cart.length && !confirm('Remplacer la liste actuelle par tout le contenu de la source ?')) return;
+$('#mvAll').onclick = async () => {
+  if (!(await replaceCart('tout le contenu de la source'))) return;
   fillCartFromSource();
 };
 
@@ -1496,18 +1538,31 @@ $('#undoGo').onclick = async () => {
   } catch (err) { $('#undoErr').textContent = err.message; $('#undoGo').disabled = false; }
 };
 
-// Navigation
-$('#nav').addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-tab]'); if (!btn) return;
-  const t = btn.dataset.tab;
-  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b === btn));
+// Navigation : 5 onglets ; « Matériel » regroupe Stock, Inventaire, Historique et Déplacer (sous-vues)
+function showTab(t) {
+  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('active', b.dataset.tab === t));
   document.querySelectorAll('main > section').forEach((s) => s.classList.toggle('hidden', s.id !== 'tab-' + t));
-  if (t === 'historique') loadHistory();
+  if (t === 'materiel' && matView === 'historique') loadHistory();
   if (t === 'controle') loadControle();
   if (t === 'admin') loadRetired();
   if (t === 'planning') loadPlanning();
   document.body.classList.toggle('plwide', t === 'planning');
+}
+$('#nav').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-tab]'); if (btn) showTab(btn.dataset.tab);
 });
+let matView = 'stock'; try { matView = localStorage.getItem('matView') || 'stock'; } catch {}
+function showMat(v) {
+  matView = v;
+  if (v !== 'mouvement') try { localStorage.setItem('matView', v); } catch {} // Déplacer : on y arrive par le bouton
+  document.querySelectorAll('#tab-materiel .matv').forEach((s) => s.classList.toggle('hidden', s.id !== 'mat-' + v));
+  document.querySelectorAll('#matView [data-mv]').forEach((b) => b.classList.toggle('active', b.dataset.mv === v));
+  $('#matMove').classList.toggle('on', v === 'mouvement');
+  if (v === 'historique' && !$('#tab-materiel').classList.contains('hidden')) loadHistory();
+}
+showMat(matView === 'mouvement' ? 'stock' : matView);
+$('#matView').addEventListener('click', (e) => { const b = e.target.closest('[data-mv]'); if (b) showMat(b.dataset.mv); });
+$('#matMove').onclick = () => { showMat('mouvement'); $('#mvFrom').focus(); };
 ['q','catFilter'].forEach((id) => $('#'+id).addEventListener('input', render));
 ['mvFrom','mvTo'].forEach((id) => $('#'+id).addEventListener('change', renderMoveForm));
 $('#mvAdd').onclick = addToCart;
@@ -1534,7 +1589,8 @@ async function act(fn, ok) {
 $('#mvGo').onclick = async () => {
   if (!cart.length) return;
   const n = cart.length;
-  if (!mvTo() && !confirm(`La destination est « Extérieur » : ${n > 1 ? `ces ${n} références sortiront` : 'cette référence sortira'} de l'inventaire.\n\nContinuer ?`)) return;
+  if (!mvTo() && !(await confirmBox('Sortir du matériel de l\'inventaire ?',
+    `<p>La destination est « Extérieur » : ${n > 1 ? `ces ${n} références sortiront` : 'cette référence sortira'} de l'inventaire.</p>`, { yes: 'Sortir de l\'inventaire' }))) return;
   try {
     await api('/api/move-batch', { from: mvFrom(), to: mvTo(), note: $('#mvNote').value, lines: cart });
     cart.length = 0; $('#mvNote').value = '';
@@ -1574,14 +1630,19 @@ function similarCategory(name) {
   return cats.find((c) => editDistance(k, catKey(c)) <= max) || null;
 }
 
-// Lit un menu de catégorie (+ champ "nouvelle catégorie") et renvoie la catégorie à utiliser
-function chooseCategory(selSel, inpSel) {
+// Lit un menu de catégorie (+ champ "nouvelle catégorie") et renvoie la catégorie à utiliser (null : fenêtre fermée par Échap)
+async function chooseCategory(selSel, inpSel) {
   let category = $(selSel).value;
   if (category === '__new__') {
     category = $(inpSel).value.trim();
     if (!category) throw new Error('Indique le nom de la nouvelle catégorie');
     const sim = similarCategory(category);
-    if (sim && confirm(`« ${category} » ressemble à la catégorie existante « ${sim} ».\n\nOK : ranger dans « ${sim} »\nAnnuler : créer la nouvelle catégorie « ${category} »`)) category = sim;
+    if (sim) {
+      const a = await askBox('Catégorie déjà existante ?', `<p>« ${esc(category)} » ressemble à la catégorie existante « <b>${esc(sim)}</b> ».</p>`,
+        { yes: `Ranger dans « ${sim} »`, no: `Créer « ${category} »` });
+      if (!a) return null;
+      if (a === 'yes') category = sim;
+    }
   }
   return category;
 }
@@ -1617,7 +1678,8 @@ $('#adminItems').addEventListener('click', (e) => {
 $('#itCancel').onclick = () => $('#itemDlg').close();
 $('#itSave').onclick = async () => {
   try {
-    const category = chooseCategory('#itCatSel', '#itCat');
+    const category = await chooseCategory('#itCatSel', '#itCat');
+    if (category === null) return;
     const qty = Number($('#itQty').value) || 0;
     if (!Number.isInteger(qty) || qty < 0) throw new Error('Quantité invalide');
     await api('/api/items/update', { id: itId, name: $('#itName').value, category, add: qty > 0 ? { location_id: Number($('#itLoc').value), qty } : null });
@@ -1626,7 +1688,8 @@ $('#itSave').onclick = async () => {
 };
 $('#itDel').onclick = async () => {
   const it = D.items.find((x) => x.id === itId);
-  if (!confirm(`Supprimer définitivement « ${it.name} » de la base ?\n\nSes éventuels mouvements seront aussi effacés de l'historique. Cette action est irréversible.`)) return;
+  if (!(await confirmBox('Supprimer cette fiche ?', `<p>Supprimer définitivement « <b>${esc(it.name)}</b> » de la base ?</p>
+    <p>Ses éventuels mouvements seront aussi effacés de l'historique. Cette action est irréversible.</p>`, { yes: 'Supprimer définitivement', danger: true }))) return;
   try {
     await api('/api/items/delete', { id: itId });
     $('#itemDlg').close(); toast('Fiche supprimée'); await load();
@@ -1635,7 +1698,8 @@ $('#itDel').onclick = async () => {
 
 $('#addItem').onclick = async () => {
   try {
-    const category = chooseCategory('#newCatSel', '#newCat');
+    const category = await chooseCategory('#newCatSel', '#newCat');
+    if (category === null) return;
     const { id, category: used } = await api('/api/items', { name: $('#newName').value, category });
     const qty = Number($('#newQty').value);
     if (qty > 0) await api('/api/move', { item_id: id, from: null, to: Number($('#newLoc').value), qty, note: 'Stock initial' });
@@ -1685,7 +1749,8 @@ $('#editSave').onclick = async () => {
   } catch (e) { toast(e.message, true); }
 };
 $('#editDel').onclick = async () => {
-  if (!confirm('Supprimer cet emplacement ?')) return;
+  const l = D.locations.find((x) => x.id === editId);
+  if (!(await confirmBox('Supprimer cet emplacement ?', `<p>Supprimer « <b>${esc(l?.name || '')}</b> » ?</p>`, { yes: 'Supprimer', danger: true }))) return;
   try {
     await api('/api/locations/delete', { id: editId });
     $('#editDlg').close(); toast('Emplacement supprimé'); await load();
@@ -1716,7 +1781,7 @@ $('#adminItems').addEventListener('click', (e) => {
   const salles = where.filter((x) => x.loc.kind === 'salle');
   $('#retName').textContent = `${it.name} (${it.category})`;
   $('#retInfo').innerHTML = salles.length
-    ? `<b>Actuellement en salle (non retirable) :</b> ${salles.map((x) => `${esc(x.loc.name)} × ${x.qty}`).join(', ')}.<br>Pour le retirer, ramène-le d'abord en stock avec l'onglet Déplacer.`
+    ? `<b>Actuellement en salle (non retirable) :</b> ${salles.map((x) => `${esc(x.loc.name)} × ${x.qty}`).join(', ')}.<br>Pour le retirer, ramène-le d'abord en stock avec « Matériel → Déplacer du matériel ».`
     : '';
   $('#retFrom').innerHTML = stocks.map((x) => `<option value="${x.loc.id}" data-max="${x.qty}">${esc(x.loc.name)} (${x.qty} en stock)</option>`).join('');
   const can = stocks.length > 0;
@@ -1735,7 +1800,8 @@ $('#retGo').onclick = async () => {
   if (!Number.isInteger(qty) || qty < 1) return toast('Quantité invalide', true);
   if (qty > max) return toast(`Seulement ${max} en stock à cet endroit`, true);
   const it = D.items.find((x) => x.id === retId);
-  if (!confirm(`Retirer ${qty} × ${it.name} de « ${locName(loc)} » ?\n\nIl sera conservé dans la liste « Matériel retiré ».`)) return;
+  if (!(await confirmBox('Retirer ce matériel ?', `<p>Retirer <b>${qty} × ${esc(it.name)}</b> de « ${esc(locName(loc))} » ?</p>
+    <p class="muted">Il sera conservé dans la liste « Matériel retiré ».</p>`, { yes: 'Retirer' }))) return;
   try {
     await api('/api/retire', { item_id: retId, location_id: loc, qty, note: $('#retNote').value });
     $('#retireDlg').close(); toast('Matériel retiré ✔'); await load(); await loadRetired();
@@ -1840,7 +1906,7 @@ function evCard(e) {
     + (e.urgent ? '<span class="tg urgent">⚠ Important</span>' : '')
     + (e.end_date !== e.date ? `<span class="tg">jusqu'au ${dayLabel(e.end_date)}</span>` : '');
   const rooms = e.room_ids.length ? e.room_ids.map((id) => locName(id)) : e.rooms;
-  return `<div class="ev ${e.color || ''} ${isSplit(e) ? 'split' : ''}" data-edit="${e.id}" title="${esc(beoInfoLines(e).join('\n'))}">${time}
+  return `<div class="ev ${evCls(e)}" data-edit="${e.id}" title="${esc(beoInfoLines(e).join('\n'))}">${time}
     <div class="evmain"><div><b class="evclient">${esc(e.client)}</b>${avExtra(e).length ? `<span class="avx" style="float:none;margin:0 6px" title="${esc('Infos AV en plus dans le BEO :\n' + avExtra(e).join('\n'))}">ⓘ AV</span>` : ''}${rooms.map((r) => `<span class="rm">${esc(r)}</span>`).join('')}${tags}</div>
       ${e.detail ? `<div class="evdetail">${esc(e.detail)}</div>` : ''}${inst ? `<div class="evinst">${inst}</div>` : ''}${actHtml}</div>
     ${e.color ? `<span class="evstatus ${e.color}">${PL_COLOR[e.color]}</span>` : ''}</div>`;
@@ -1867,6 +1933,14 @@ function beoInfoLines(e) {
 const PHASES = ['Montage', 'Démontage'];
 const pendingPhases = (e, tags = e.tags) => tags.filter((t) => PHASES.includes(t) && !(e.done || []).includes(t));
 const isSplit = (e) => e.color === 'red' && (e.done || []).length > 0 && pendingPhases(e).length > 0;
+// « À préparer » en rouge vif seulement quand c'est pour bientôt : l'événement a lieu aujourd'hui ou demain (ou est en cours) ;
+// case mi-verte / mi-rouge (montage validé) : quand le démontage (dernier jour) est aujourd'hui ou demain. Sinon rouge pâle.
+const isDue = (e) => {
+  if (e.color !== 'red') return false;
+  const t = isoToday(), tm = addDays(t, 1);
+  return isSplit(e) ? t <= e.end_date && e.end_date <= tm : e.date <= tm && e.end_date >= t;
+};
+const evCls = (e) => [e.color || '', isSplit(e) ? 'split' : '', isDue(e) ? 'due' : ''].filter(Boolean).join(' ');
 const tagChip = (t, e) => (e.done || []).includes(t) ? `<span class="tg ok" title="${esc(t)} validé (Prêt)">${esc(t)} ✓</span>` : `<span class="tg ${tagClass(t)}">${esc(t)}</span>`;
 
 // Section AV du BEO : ce qui va au-delà du simple « LCD (projecteur + écran) » → signalé sur la case
@@ -1908,7 +1982,7 @@ function gridCell(e, hit, extra = '') {
   const mark = (xtra.length ? `<span class="avx" title="${esc('Infos AV en plus dans le BEO :\n' + xtra.join('\n'))}">ⓘ</span>` : '')
     + (hs.length ? `<span class="hsx" title="${esc('Matériel ajouté dans la salle :\n' + hs.join('\n'))}">🧰</span>` : '')
     + (acts.length ? `<span class="hsx ${acts.every((a) => a.done_ts) ? 'alldone' : ''}" title="${esc('Actions à faire :\n' + acts.map(actLine).join('\n'))}">⏰</span>` : '');
-  return `<div class="pc ${e.color || ''} ${isSplit(e) ? 'split' : ''} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${mark}${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
+  return `<div class="pc ${evCls(e)} ${e.urgent ? 'urgent' : ''} ${hit(e) ? '' : 'dim'}" data-edit="${e.id}" title="${esc(tip)}">${time}<div class="c">${mark}${e.urgent ? '⚠ ' : ''}${esc(e.client)}</div>${e.detail ? `<div class="d">${esc(e.detail)}</div>` : ''}${tags ? `<div>${tags}</div>` : ''}${extra}</div>`;
 }
 
 // ---- Offres (fiches techniques) : affichées dans la salle, au jour du montage
@@ -2040,7 +2114,7 @@ function renderGrid(days, weekEvs, hit, today) {
       // la case prend la couleur de son (dernier) événement : pleine même quand la ligne s'agrandit ;
       // un clic dans la partie agrandie (sous les événements) ouvre ce dernier événement
       const last = list[list.length - 1];
-      const cls = [hit(last) ? `fill fill-${isSplit(last) ? 'split' : last.color || 'none'}` : '', r <= ti && ti < r + v.rs ? 'tdy' : ''].filter(Boolean).join(' ');
+      const cls = [hit(last) ? `fill fill-${isSplit(last) ? 'split' : last.color || 'none'}${isDue(last) ? ' due' : ''}` : '', r <= ti && ti < r + v.rs ? 'tdy' : ''].filter(Boolean).join(' ');
       tds.push(`<td rowspan="${v.rs}" colspan="${v.cs}"${cls ? ` class="${cls}"` : ''} data-last="${last.id}">${list.map((e, i) => gridCell(e, hit, chipHtml(per[i]))).join('')}</td>`);
     }
     return `<tr class="${d === today ? 'today' : ''}"><th class="day">${dayLabel(d)}</th>${tds.join('')}</tr>`;
@@ -2059,7 +2133,6 @@ function renderPlanning() {
   if (!PL.week) PL.week = weekStart(today);
   $('#plSource').innerHTML = planningSourceHtml();
   const days = weekDays(PL.week);
-  $('#plWeekLbl').textContent = `${dayLabel(days[0])} → ${dayLabel(days[9])}`;
   $('#plWeekInfo').textContent = `Semaine du ${dayLabel(days[0])} au ${dayLabel(days[9])}`;
   const q = norm($('#plQ').value);
   const hit = (e) => !q || norm([e.client, e.detail, e.rooms.join(' '), e.room_ids.map(locName).join(' '), e.tags.join(' ')].join(' ')).includes(q);
@@ -2131,10 +2204,18 @@ function setFull(on) {
 $('#plFull').onclick = () => setFull(!document.body.classList.contains('plfull'));
 document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('plfull')) setFull(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && document.body.classList.contains('plfull') && !document.querySelector('dialog[open]')) setFull(false); });
-$('#plPrev2').onclick = () => $('#plPrev').click();
-$('#plNext2').onclick = () => $('#plNext').click();
 $('#plFiche').onclick = () => window.open(`/fiche.html?date=${isoToday()}`, '_blank', 'noopener'); // date du jour au moment du clic
 $('#plToday').onclick =() => { PL.week = weekStart(isoToday()); PL.day = isoToday(); $('#plQ').value = ''; renderPlanning(); };
+// Raccourcis clavier du planning : ← / → semaine, T aujourd'hui, / rechercher (Échap : vider la recherche), N nouvel événement
+// (jamais pendant une saisie ni quand une fenêtre est ouverte)
+document.addEventListener('keydown', (e) => {
+  if ($('#tab-planning').classList.contains('hidden') || document.querySelector('dialog[open]')) return;
+  if (e.target === $('#plQ') && e.key === 'Escape') { $('#plQ').value = ''; $('#plQ').blur(); renderPlanning(); return; }
+  if (e.ctrlKey || e.altKey || e.metaKey || e.target.closest?.('input, textarea, select, [contenteditable]')) return;
+  const k = { ArrowLeft: '#plPrev', ArrowRight: '#plNext', t: '#plToday', T: '#plToday', n: '#plNew', N: '#plNew' }[e.key];
+  if (k) { e.preventDefault(); $(k).click(); }
+  else if (e.key === '/') { e.preventDefault(); $('#plQ').focus(); $('#plQ').select(); }
+});
 
 // ----- Fenêtre d'édition d'un événement
 const EV = { id: null, confirmDel: false };
@@ -2393,7 +2474,8 @@ for (const box of [$('#evActs'), $('#actBody')]) {
     if ('actpick' in b.dataset) { const t = box.querySelector('[data-acttxt]'); t.value = b.dataset.actpick; return t.focus(); }
     try {
       if (b.dataset.actdel) {
-        if (!confirm('Supprimer cette action ?')) return;
+        const a = PL.actions.find((x) => x.id === Number(b.dataset.actdel));
+        if (!(await confirmBox('Supprimer cette action ?', a ? `<p><b>${esc(actWhen(a))}</b> · ${esc(actTxt(a))} — ${esc(roomsLabel(a.room_ids))}</p>` : '', { yes: 'Supprimer', danger: true }))) return;
         setPL(await api('/api/actions/delete', { id: Number(b.dataset.actdel) })); afterRoomExtra(); toast('Action supprimée');
         return;
       }

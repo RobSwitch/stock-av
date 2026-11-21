@@ -78,7 +78,8 @@
   .l1 .time { font-variant-numeric:tabular-nums; font-weight:800; margin-right:1.2mm; }
   .l1 .av { color:var(--accent); font-weight:700; }
   .chip { display:inline-block; font-size:.78em; font-weight:800; padding:0 1.4mm; border-radius:1mm; margin-left:1mm; vertical-align:.08em; border:1px solid currentColor; }
-  .chip.m { color:var(--blue); } .chip.s { color:#6b3fc4; } .chip.d { color:var(--orange); } .chip.ok { color:var(--green); } .chip.pr { color:#8a5a00; }
+  .chip.m { color:var(--blue); } .chip.s { color:#6b3fc4; } .chip.d { color:var(--orange); } .chip.ok { color:var(--green); } .chip.pr { color:#8a5a00; } .chip.x { color:var(--muted); font-weight:600; }
+  .unk { color:var(--orange); font-size:.85em; margin-top:.2em; }
   .l2 { color:var(--muted); font-size:.9em; }
   .l2 b { color:var(--ink); font-weight:700; }
   .dolce { color:var(--orange); font-weight:700; }
@@ -171,6 +172,11 @@ function offerInfo(e) {
   }
   out.dolce = [...new Set(out.dolce)];
   return out;
+}
+// sociétés qui installent (et démontent) tout le matériel de la fiche, quand rien n'est pour nous ; sinon null
+function extOnly(e) {
+  const of = offerInfo(e), s = Object.keys(of.ext);
+  return !of.dolce.length && s.length ? s : null;
 }
 // mise en place et nombre de personnes (lignes du BEO)
 function beoInfo(e) {
@@ -271,10 +277,15 @@ function roomRows(areas, day) {
       const end = endOf(r.today);
       const free = !end ? '<span class="free ok">libre</span>'
         : end === '?' ? '<span class="free">heure de fin ?</span>' : `<span class="free">libre dès <b>${esc(end)}</b></span>`;
-      // aujourd'hui : qui a tourné, et ce qu'il reste à faire ce soir (démontage, montage pas validé)
+      // aujourd'hui : qui a tourné, et ce qu'il reste à faire ce soir (démontage, montage pas validé) ;
+      // démontage d'une fiche où tout est installé par une société externe : c'est elle qui démonte, rien pour nous
       const todayHtml = r.today.map((e) => {
         const left = e.tags.filter((t) => PHASES.includes(t) && !(e.done || []).includes(t));
-        const chips = left.map((t) => `<span class="chip d">${t === 'Démontage' ? 'démontage à faire' : 'montage pas validé'}</span>`).join(' ');
+        const chips = left.map((t) => {
+          const ext = t === 'Démontage' && extOnly(e);
+          return ext ? `<span class="chip x" title="Matériel installé et démonté par la société externe : rien à démonter pour nous">démontage par ${esc(ext.join(', '))}</span>`
+            : `<span class="chip d">${t === 'Démontage' ? 'démontage à faire' : 'montage pas validé'}</span>`;
+        }).join(' ');
         return `<div class="ev0">${e.start ? `<span class="time">${esc(e.start)}${e.end ? '–' + esc(e.end) : ''}</span>` : ''}${esc(e.client)}${chips ? ' ' + chips : ''}</div>`;
       }).join('');
       // actions à faire, par heure (d'abord celles des jours passés pas encore faites)
@@ -290,7 +301,12 @@ function roomRows(areas, day) {
         const g = groups.find((y) => y.key === key);
         if (g) g.names.push(x.name); else groups.push({ key, names: [x.name], ...x });
       }
-      const mat = !groups.length ? (r.today.length ? '<div class="clean">✓ aucun matériel à démonter</div>' : '')
+      // rien dans la salle selon l'application : ne pas écrire « aucun matériel à démonter » à côté d'un « démontage à faire »
+      const pendingD = r.today.filter((e) => e.tags.includes('Démontage') && !(e.done || []).includes('Démontage'));
+      const mat = !groups.length ? (!r.today.length ? ''
+          : pendingD.some((e) => !extOnly(e)) ? '<div class="unk">Rien d\'enregistré dans la salle : vérifier sur place</div>'
+          : pendingD.length ? '<div class="clean">✓ rien à démonter pour nous</div>'
+          : '<div class="clean">✓ aucun matériel à démonter</div>')
         : groups.map((x) => {
           if (!x.stays) stats.mat++;
           const where = x.names.length < r.rooms.length ? ` <u>${esc(x.names.join(' + '))}</u>` : '';

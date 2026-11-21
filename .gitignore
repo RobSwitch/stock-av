@@ -18,4 +18,6 @@ dist/
 
 # démo locale (base et documents fictifs)
 demo/
+# essai avant publication (copie des vraies données)
+essai/
 exemples-fiches/
