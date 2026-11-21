@@ -474,6 +474,14 @@
   table.oft ul { margin:6px 0 0; padding-left:18px; }
   table.oft input[type=date] { padding:4px 7px; }
   #ofDlg, #pdfDlg { overflow-x:hidden; }
+  /* dates et heures d'une salle de la fiche (aperçu et case) : toutes modifiables */
+  .ofdt { display:grid; grid-template-columns:auto 1fr; gap:6px 8px; align-items:start; font-size:13px; }
+  .ofdt .k { font-weight:600; color:var(--muted); padding-top:6px; white-space:nowrap; }
+  .ofdt .v { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; }
+  .ofdt input { padding:4px 7px; font-size:13px; }
+  .ofdt input[type=time] { width:96px; }
+  .ofdt .raw { flex-basis:100%; font-size:12px; color:var(--muted); }
+  .ofdt input.bad { border-color:var(--err); background:var(--red-soft); }
   .oflist .o { display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:9px 0; border-bottom:1px solid var(--line); font-size:14px; }
 
   /* ---- Planning : vue liste ---- */
@@ -815,6 +823,7 @@
       <label style="flex:1.3">Date<input type="date" id="evDate"></label>
       <label style="flex:1.3">Jusqu'au<input type="date" id="evEndDate"></label>
     </div>
+    <p class="muted" id="evNight" style="margin:-6px 0 0;font-size:12.5px;display:none"></p>
     <label>Description<textarea id="evDetail" rows="2" placeholder="ex : LCD + HFS"></textarea></label>
     <div><div class="lbl">Statut</div>
       <div class="colopts" id="evColors">
@@ -2029,7 +2038,8 @@ function offerTip(o, r) {
   return [
     `Offre — ${o.label ? `« ${o.label} » · ` : ''}${o.client}${o.title || o.version ? ` (${[o.title, o.version].filter(Boolean).join(' ')})` : ''}`,
     `Salle : ${r.name ? r.name + ' → ' : ''}${r.room_ids.map(locName).join(', ')}`,
-    `Montage : ${dayLabel(r.setup)}${r.show_from ? ` · Show : ${r.show_raw || dayLabel(r.show_from)}` : ''}${r.demontage ? ` · Démontage : ${dayLabel(r.demontage)}` : ''}`,
+    // dates enregistrées (corrigées si besoin), pas le texte de la fiche
+    `Montage : ${dayLabel(r.setup)}${r.setup_time ? ' ' + r.setup_time : ''}${r.show_from ? ` · Show : ${dayLabel(r.show_from)}${r.show_to && r.show_to !== r.show_from ? ' → ' + dayLabel(r.show_to) : ''}${r.show_start ? ` ${r.show_start}–${r.show_end || '?'}` : ''}` : ''}${r.demontage ? ` · Démontage : ${dayLabel(r.demontage)}${r.demontage_time ? ' ' + r.demontage_time : ''}` : ''}`,
     p.dolce.length ? 'À monter par nous (Dolce) :\n' + p.dolce.map((i) => `   ${i.qty} × ${i.name}`).join('\n') : '',
     p.man.length ? 'Prêté, à installer par nous :\n' + p.man.map((i) => `   ${i.qty} × ${i.name} (${i.supplier})`).join('\n') : '',
     Object.keys(p.ext).length ? 'Installé par la société externe : ' + Object.entries(p.ext).map(([s, n]) => `${s} (${n})`).join(', ') : '',
@@ -2408,6 +2418,7 @@ function openEvent(ev, pre) {
   $('#evClient').value = ev?.client || '';
   $('#evStart').value = ev?.start || ''; $('#evEnd').value = ev?.end || '';
   $('#evDate').value = day; $('#evEndDate').value = ev?.end_date || day;
+  evNightHint();
   $('#evDetail').value = ev?.detail || '';
   const col = ev ? (ev.color || '') : 'red';
   document.querySelectorAll('#evColors input').forEach((r) => { r.checked = r.value === col; });
@@ -2431,7 +2442,7 @@ function openEvent(ev, pre) {
   $('#evDel').style.display = ev ? '' : 'none'; $('#evDel').textContent = 'Supprimer';
   $('#evErr').textContent = '';
   // fiches techniques de la case, matériel ajouté et actions à faire dans la salle
-  EVO.edit = null; EVO.confirm = null; EVO.man = null;
+  EVO.edit = null; EVO.confirm = null; EVO.man = null; EVO.dates = null;
   $('#evNotes').innerHTML = ''; $('#evActs').innerHTML = '';
   renderEvOffers(); renderNotes($('#evNotes'), [...sel]);
   renderActions($('#evActs'), [...sel], { from: day, to: ev?.end_date || day });
@@ -2509,6 +2520,16 @@ $('#plBody').addEventListener('click', (e) => {
 });
 $('#plNew').onclick = () => openEvent(null, {});
 $('#evDate').addEventListener('change', () => { if ($('#evEndDate').value < $('#evDate').value) $('#evEndDate').value = $('#evDate').value; });
+// horaire de nuit : fin avant le début (22:00 → 03:00) = fin le lendemain, la case reste au jour où ça commence
+function evNightHint() {
+  const s = $('#evStart').value, e = $('#evEnd').value, d = $('#evDate').value, d2 = $('#evEndDate').value;
+  const on = !!(s && e && e < s);
+  $('#evNight').style.display = on ? '' : 'none';
+  if (!on) return;
+  $('#evNight').textContent = d2 && d && d2 > d ? `🌙 Horaire de nuit : chaque jour, finit le lendemain à ${e} (affiché dans la case du jour où ça commence).`
+    : `🌙 Finit le lendemain${d ? ` (${dayLabel(addDays(d, 1))})` : ''} à ${e} — affiché dans la case ${d ? `du ${dayLabel(d)}` : 'du jour où ça commence'}.`;
+}
+['evStart', 'evEnd', 'evDate', 'evEndDate'].forEach((id) => $('#' + id).addEventListener('input', evNightHint));
 $('#evCancel').onclick = () => $('#evDlg').close();
 const evPayload = () => ({
   id: EV.id, client: $('#evClient').value, start: $('#evStart').value, end: $('#evEnd').value,
@@ -2769,7 +2790,8 @@ $('#clrGo').onclick = async () => {
 
 // ----- Fiches techniques de la case (fenêtre de l'événement) : renommer l'étiquette, retirer de la case, supprimer,
 // importer une fiche pour cette case, ou y associer une fiche déjà enregistrée
-const EVO = { edit: null, confirm: null, man: null }; // man : « offre|salle » dont on choisit le matériel prêté
+// man : « offre|salle » dont on choisit le matériel prêté ; edit : « offre|salle » en cours de modification (dates : copie modifiée)
+const EVO = { edit: null, confirm: null, man: null, dates: null };
 const evRoomsChecked = () => [...document.querySelectorAll('#evRooms input:checked')].map((c) => Number(c.value));
 const evSpan = () => { const a = $('#evDate').value, b = $('#evEndDate').value; return [a, b && b > a ? b : a]; };
 // parties de fiche affichées dans la case : salle en commun et un jour de montage / show / démontage dans la période
@@ -2781,17 +2803,22 @@ function renderEvOffers() {
   const list = ids.length && from ? cellOffers(ids, from, to) : [];
   let h = `<div class="h">📎 Fiches techniques de la case ${list.length ? `<span class="muted" style="font-weight:400">(${list.length})</span>` : ''}</div>`;
   for (const { o, r, index } of list) {
-    if (EVO.edit === o.id) {
-      h += `<div class="it"><label class="grow">Nom sur l'étiquette<input id="evoLabel" value="${esc(o.label)}" placeholder="Offre" maxlength="40"></label>
-        <label class="grow">Société<input id="evoClient" value="${esc(o.client)}"></label>
-        <button type="button" class="btn small" data-evo="save" data-o="${o.id}">Enregistrer</button><button type="button" class="btn ghost small" data-evo="cancel">Annuler</button></div>`;
+    const k = `${o.id}|${index}`;
+    if (EVO.edit === k) {
+      // dates et heures de cette salle de la fiche : modifiables après l'enregistrement (copie, envoyée à « Enregistrer »)
+      EVO.dates ||= { name: r.name, setup: r.setup, show_from: r.show_from, show_to: r.show_to, demontage: r.demontage, ...Object.fromEntries(OF_TIMES.map((t) => [t, r[t] || ''])) };
+      h += `<div class="it" style="display:block"><div class="row" style="gap:8px"><label class="grow">Nom sur l'étiquette<input id="evoLabel" value="${esc(o.label)}" placeholder="Offre" maxlength="40"></label>
+        <label class="grow">Société<input id="evoClient" value="${esc(o.client)}"></label></div>
+        <div class="lbl" style="margin-top:8px">Dates et heures${r.name ? ` — ${esc(r.name)}` : ''}</div>
+        <div id="evoDates">${ofDatesHtml(EVO.dates, (t) => `data-evod="${t}"`)}</div>
+        <p class="muted" style="font-size:12px;margin:6px 0 0">Les étiquettes Montage / Show / Démontage suivent les nouvelles dates. Heures facultatives : utilisées pour les cases créées par la fiche (une case du BEO garde son horaire).</p>
+        <div class="row" style="margin-top:8px"><button type="button" class="btn small" data-evo="save" data-o="${o.id}" data-x="${index}">Enregistrer</button><button type="button" class="btn ghost small" data-evo="cancel">Annuler</button></div></div>`;
       continue;
     }
-    const k = `${o.id}|${index}`;
     const ext = (r.items || []).map((it, j) => ({ it, j })).filter((x) => x.it.kind === 'externe');
     h += `<div class="it"><span class="grow">${offerChip(o, r)} <b>${esc(o.client)}</b> <span class="muted">${o.version ? esc(o.version) + ' · ' : ''}${esc(roomsLabel(r.room_ids))} · ${esc(phaseTxt(r))}</span></span>
       ${ext.length ? `<button type="button" class="btn ghost small" data-evo="man" data-o="${o.id}" data-x="${index}" title="Matériel d'une société externe que nous installons nous-mêmes (prêté)">🤝 Prêté${ext.some((x) => x.it.managed) ? ` (${ext.filter((x) => x.it.managed).length})` : ''}…</button>` : ''}
-      <button type="button" class="btn ghost small" data-evo="rename" data-o="${o.id}" title="Nom affiché sur l'étiquette de la case, société">✎ Renommer</button>
+      <button type="button" class="btn ghost small" data-evo="rename" data-o="${o.id}" data-x="${index}" title="Nom affiché sur l'étiquette de la case, société, dates et heures">✎ Modifier</button>
       <button type="button" class="btn ghost small" data-evo="unlink" data-o="${o.id}" data-x="${index}" title="La fiche reste dans la liste des offres (hors grille), sans étiquette ici">${EVO.confirm === 'unlink|' + k ? 'Confirmer le retrait' : 'Retirer de la case'}</button>
       <button type="button" class="btn ghost small" data-evo="delete" data-o="${o.id}" style="color:var(--err)">${EVO.confirm === 'delete|' + o.id ? 'Confirmer la suppression' : 'Supprimer'}</button></div>`;
     // matériel externe : coché = prêté par la société, installé et démonté par nous
@@ -2814,22 +2841,43 @@ function renderEvOffers() {
 }
 async function evoApi(path, body, msg) {
   $('#evErr').textContent = '';
-  try { setPL(await api(path, body)); EVO.edit = null; EVO.confirm = null; EVO.man = null; renderEvOffers(); renderPlanning(); renderLieux(); toast(msg); }
-  catch (err) { $('#evErr').textContent = err.message; }
+  try {
+    setPL(await api(path, body)); EVO.edit = null; EVO.confirm = null; EVO.man = null; EVO.dates = null;
+    renderPlanning(); renderLieux();
+    // case créée par la fiche et déplacée avec ses nouvelles dates (ou retirée) : la fenêtre n'a plus de case à montrer
+    if (EV.id && !PL.events.some((x) => x.id === EV.id)) { $('#evDlg').close(); return toast(`${msg} · la case créée par la fiche a été déplacée ou retirée`); }
+    renderEvOffers(); toast(msg);
+  }
+  catch (err) { $('#evErr').textContent = err.message; $('#evErr').scrollIntoView({ block: 'nearest' }); }
 }
-$('#evOffers').addEventListener('change', (e) => { if (e.target.id === 'evoAssoc') $('#evOffers [data-evo="assoc"]').disabled = !e.target.value; });
+$('#evOffers').addEventListener('change', (e) => {
+  if (e.target.id === 'evoAssoc') $('#evOffers [data-evo="assoc"]').disabled = !e.target.value;
+  const dt = e.target.closest('[data-evod]');
+  if (dt && EVO.dates) ofDateEdit(EVO.dates, dt.dataset.evod, dt.value, (k) => $(`#evoDates [data-evod="${k}"]`));
+});
 $('#evOffers').addEventListener('click', (e) => {
   const b = e.target.closest('[data-evo]'); if (!b) return;
   const act = b.dataset.evo, id = Number(b.dataset.o), o = PL.offers.find((x) => x.id === id);
   const ids = evRoomsChecked();
-  if (act === 'rename') { EVO.edit = id; EVO.confirm = null; EVO.man = null; renderEvOffers(); $('#evoLabel')?.focus(); }
-  else if (act === 'cancel') { EVO.edit = null; EVO.man = null; renderEvOffers(); }
-  else if (act === 'man') { const k = `${id}|${b.dataset.x}`; EVO.man = EVO.man === k ? null : k; EVO.edit = null; EVO.confirm = null; renderEvOffers(); }
+  if (act === 'rename') { EVO.edit = `${id}|${b.dataset.x}`; EVO.dates = null; EVO.confirm = null; EVO.man = null; renderEvOffers(); $('#evoLabel')?.focus(); }
+  else if (act === 'cancel') { EVO.edit = null; EVO.dates = null; EVO.man = null; renderEvOffers(); }
+  else if (act === 'man') { const k = `${id}|${b.dataset.x}`; EVO.man = EVO.man === k ? null : k; EVO.edit = null; EVO.dates = null; EVO.confirm = null; renderEvOffers(); }
   else if (act === 'mansave') {
     const items = [...document.querySelectorAll('#evOffers [data-evman]:checked')].map((c) => Number(c.dataset.evman));
     evoApi('/api/offers/update', { id, managed: [{ index: Number(b.dataset.x), items }] }, `Matériel prêté enregistré ✔ (${items.length} élément${items.length > 1 ? 's' : ''} installé${items.length > 1 ? 's' : ''} par nous) · annulable dans Contrôle → Journal`);
   }
-  else if (act === 'save') evoApi('/api/offers/update', { id, label: $('#evoLabel').value, client: $('#evoClient').value }, 'Fiche renommée ✔');
+  else if (act === 'save') {
+    // dates / heures envoyées seulement si elles ont changé (sinon simple changement de nom, pas noté au journal)
+    const x = Number(b.dataset.x), r = o?.rooms[x], nd = EVO.dates;
+    const keys = ['setup', 'show_from', 'show_to', 'demontage', ...OF_TIMES];
+    const moved = r && nd && keys.some((k) => (nd[k] || '') !== (r[k] || ''));
+    const body = { id, label: $('#evoLabel').value, client: $('#evoClient').value };
+    if (moved) body.dates = [{ index: x, ...Object.fromEntries(keys.map((k) => [k, nd[k] || ''])) }];
+    const [from, to] = evSpan();
+    const still = moved && Object.keys(offerPhases(nd)).some((d) => from <= d && d <= to);
+    evoApi('/api/offers/update', body, !moved ? 'Fiche modifiée ✔'
+      : `Dates de la fiche modifiées ✔${still ? '' : ` — son étiquette est maintenant le ${dayLabel(nd.setup)} (montage)`} · annulable dans Contrôle → Journal`);
+  }
   else if (act === 'unlink') {
     const k = `unlink|${id}|${b.dataset.x}`;
     if (EVO.confirm !== k) { EVO.confirm = k; return renderEvOffers(); }
@@ -3368,33 +3416,62 @@ function ofMatSummary(r) {
     + `${Object.entries(p.ext).map(([s, n]) => `<span class="pill ext">${esc(s)} ${n}</span>`).join(' ')} ${p.inc ? `<span class="pill inc">Inclus ${p.inc}</span>` : ''}`
     + (ext ? ' <span class="muted" style="font-size:12px">· choisir le matériel prêté</span>' : '');
 }
+// ---- Dates et heures d'une salle de la fiche : toutes modifiables (aperçu avant enregistrement, puis depuis la case)
+// attr(k) : attribut du champ (« data-ofd="0|setup" » dans l'aperçu, « data-evod="setup" » dans la case)
+const OF_TIMES = ['setup_time', 'show_start', 'show_end', 'demontage_time'];
+const okYear = (d) => { if (!d) return true; const n = new Date().getFullYear(), y = Number(d.slice(0, 4)); return /^\d{4}-\d\d-\d\d$/.test(d) && y >= n - 2 && y <= n + 5; };
+const nightTxt = (s, e) => (s && e && e < s ? '🌙 fin le lendemain' : '');
+function ofDatesHtml(r, attr, raw = '') {
+  const f = (k, type) => `<input type="${type}" ${attr(k)} value="${esc(r[k] || '')}"${type === 'date' && !okYear(r[k]) ? ' class="bad"' : ''}>`;
+  return `<div class="ofdt">
+    <span class="k">Montage</span><span class="v">${f('setup', 'date')}<span class="muted">à</span>${f('setup_time', 'time')}</span>
+    <span class="k">Show</span><span class="v">${f('show_from', 'date')}<span class="muted">→</span>${f('show_to', 'date')}
+      <span style="flex-basis:100%;height:0"></span>${f('show_start', 'time')}<span class="muted">–</span>${f('show_end', 'time')}<span class="muted" data-night>${nightTxt(r.show_start, r.show_end)}</span>
+      ${raw ? `<span class="raw">fiche : « ${esc(raw)} »</span>` : ''}</span>
+    <span class="k">Démontage</span><span class="v">${f('demontage', 'date')}<span class="muted">à</span>${f('demontage_time', 'time')}</span></div>`;
+}
+// une date / heure modifiée : la fin du show suit son début ; le démontage suit la fin du show tant qu'il était sur la valeur
+// par défaut (dernier jour de show) ou sur une date impossible. field(k) → champ affiché, mis à jour sans tout redessiner.
+function ofDateEdit(r, f, v, field) {
+  const oldTo = r.show_to || r.show_from;
+  r[f] = v || (OF_TIMES.includes(f) ? '' : null);
+  if (f === 'show_from' && r.show_from && (!r.show_to || r.show_to < r.show_from || !okYear(r.show_to))) r.show_to = r.show_from;
+  const to = r.show_to || r.show_from;
+  if ((f === 'show_from' || f === 'show_to') && to && (!r.demontage || r.demontage === oldTo || r.demontage < to || !okYear(r.demontage))) r.demontage = to;
+  for (const k of ['setup', 'show_from', 'show_to', 'demontage']) {
+    const el = field(k); if (!el) continue;
+    if (k !== f && el.value !== (r[k] || '')) el.value = r[k] || '';
+    el.classList.toggle('bad', !okYear(r[k]));
+  }
+  const n = field('show_end')?.closest('.ofdt')?.querySelector('[data-night]');
+  if (n) n.textContent = nightTxt(r.show_start, r.show_end);
+}
+
 function renderOfPreview() {
   const d = OF.data; ofMode(true);
   let h = '';
   if (d.manual) {
     h += `<div class="plwarn">${esc(d.reason)}.<br>Tu peux quand même l'enregistrer comme offre : indique la société, la salle et le jour du montage.</div>`;
-    const r0 = d.rooms[0];
     h += `<div class="row" style="margin-top:12px"><label style="flex:2;min-width:220px">Société / client<input id="ofClient" value="${esc(d.client)}"></label></div>
-      <div class="row" style="margin-top:10px">
-      <label style="flex:1;min-width:140px">Montage<input type="date" id="ofSetup0" data-ofd="0|setup" value="${esc(r0.setup || '')}"></label>
-      <label style="flex:1;min-width:140px">Show du<input type="date" data-ofd="0|show_from" value="${esc(r0.show_from || '')}"></label>
-      <label style="flex:1;min-width:140px">au<input type="date" data-ofd="0|show_to" value="${esc(r0.show_to || '')}"></label>
-      <label style="flex:1;min-width:140px">Démontage<input type="date" data-ofd="0|demontage" value="${esc(r0.demontage || '')}"></label></div>
+      <div class="lbl" style="margin-top:12px">Dates et heures</div>${ofDatesHtml(d.rooms[0], (k) => `data-ofd="0|${k}"`)}
       <div class="lbl" style="margin-top:12px">Salle(s)</div><div>${ofRoomCell(d.rooms[0], 0)}</div>`;
   } else {
     h += `<div class="row" style="align-items:center;margin-top:4px"><label style="flex:1;min-width:240px">Société / client<input id="ofClient" value="${esc(d.client)}"></label>
       <span class="muted" style="font-size:13px">${esc([d.title, d.version].filter(Boolean).join(' '))}${d.dated ? ` · datée du ${esc(d.dated)}` : ''} · ${esc(d.filename)}</span></div>`;
     if (d.replaces.length) h += `<label class="chk plwarn" style="margin-top:10px"><input type="checkbox" id="ofReplace" checked> Remplacer l'offre déjà enregistrée pour ce client et ces jours-là (${d.replaces.map((o) => `${esc(o.version || '?')} du ${esc(o.ts.slice(0, 10))}`).join(', ')})</label>`;
-    h += `<p class="muted" style="font-size:13px;margin:8px 0 0">À l'enregistrement, les étiquettes <span class="tg setup">Montage</span><span class="tg show">Show</span><span class="tg demontage">Démontage</span> sont ajoutées dans la grille (sur l'événement de cette société s'il existe, sinon il est créé). La fiche ne donne pas de démontage : par défaut, le dernier jour de show.</p>`;
+    h += `<p class="muted" style="font-size:13px;margin:8px 0 0">À l'enregistrement, les étiquettes <span class="tg setup">Montage</span><span class="tg show">Show</span><span class="tg demontage">Démontage</span> sont ajoutées dans la grille (sur l'événement de cette société s'il existe, sinon il est créé). La fiche ne donne pas de démontage : par défaut, le dernier jour de show.</p>
+      <p class="muted" style="font-size:13px;margin:6px 0 0"><b>Toutes les dates et heures se corrigent ici</b> (et plus tard depuis la case : ✎ Modifier). Les heures sont facultatives : elles servent quand la fiche crée la case (pas de BEO ce jour-là) ; une case du BEO garde l'horaire du BEO. Une fin avant le début (22:00 → 03:00) = fin le lendemain, la case reste au jour où ça commence.</p>`;
+    // dates écrites de travers dans la fiche (« 20026 ») : signalées, à vérifier avant d'enregistrer
+    const warns = d.rooms.flatMap((r) => (r.warns || []).map((w) => `<b>${esc(r.name)}</b> — ${esc(w)}`));
+    if (warns.length) h += `<div class="plwarn" style="margin-top:10px">⚠ Erreur probable dans la fiche :<br>${warns.join('<br>')}<br>Vérifie les dates ci-dessous (corrige-les si besoin) avant d'enregistrer.</div>`;
     if (d.rooms.some((r) => r.items.some((it) => it.kind === 'externe'))) h += `<p class="muted" style="font-size:13px;margin:6px 0 0"><span class="pill ext">Sociétés externes</span>
       leur matériel est installé par elles-mêmes : il apparaît dans la salle (onglet Salles) du montage au démontage, <b>sans rien à valider</b>.
       Si elles nous <b>prêtent</b> du matériel que nous installons nous-mêmes, ouvre la liste du matériel et coche <b>« installé par nous »</b> :
       il passera par le montage / démontage et restera dans notre liste avec notre matériel.</p>`;
-    h += `<div class="pdfwrap"><table class="pdft oft"><thead><tr><th>Salle (fiche)</th><th>Salle dans l'application</th><th>Montage</th><th>Show</th><th>Démontage</th><th>Matériel</th></tr></thead><tbody>`;
+    h += `<div class="pdfwrap"><table class="pdft oft"><thead><tr><th>Salle (fiche)</th><th>Salle dans l'application</th><th>Dates et heures</th><th>Matériel</th></tr></thead><tbody>`;
     d.rooms.forEach((r, i) => {
-      h += `<tr><td><b>${esc(r.name)}</b><br><span class="muted">page ${r.page}</span></td><td>${ofRoomCell(r, i)}</td>
-        <td><input type="date" data-ofd="${i}|setup" value="${esc(r.setup || '')}"></td><td>${esc(r.show_raw || '—')}</td>
-        <td><input type="date" data-ofd="${i}|demontage" value="${esc(r.demontage || '')}"></td>
+      h += `<tr><td><b>${esc(r.name)}</b><br><span class="muted">page ${r.page}</span>${(r.warns || []).length ? '<br><span style="color:var(--err)">⚠ date à vérifier</span>' : ''}</td><td>${ofRoomCell(r, i)}</td>
+        <td>${ofDatesHtml(r, (k) => `data-ofd="${i}|${k}"`, r.show_raw)}</td>
         <td><details><summary>${ofMatSummary(r)}</summary>
           <ul>${r.items.map((it, j) => `<li>${it.qty} × ${esc(it.name)} ${kindPill(it)}${it.kind === 'externe'
             ? ` <label class="chk" style="display:inline-flex;margin-left:4px;font-size:12px"><input type="checkbox" data-ofman="${i}|${j}" ${it.managed ? 'checked' : ''}> installé par nous</label>` : ''}</li>`).join('')}</ul></details></td></tr>`;
@@ -3447,7 +3524,10 @@ $('#ofBody').addEventListener('change', (e) => {
     return;
   }
   const st = e.target.closest('[data-ofd]');
-  if (st) { const [i, f] = st.dataset.ofd.split('|'); d.rooms[Number(i)][f] = st.value || null; }
+  if (st) {
+    const [i, f] = st.dataset.ofd.split('|');
+    ofDateEdit(d.rooms[Number(i)], f, st.value, (k) => $(`#ofBody [data-ofd="${i}|${k}"]`));
+  }
 });
 
 $('#ofSave').onclick = async () => {
@@ -3469,7 +3549,7 @@ $('#ofSave').onclick = async () => {
     toast(`Offre enregistrée ✔${first ? ` — montage le ${dayLabel(first)}` : ''} · noté dans Contrôle → Journal`);
   } catch (err) {
     // simple oubli dans l'aperçu (date, salle…) : à corriger puis réessayer ; sinon l'aperçu n'est plus valable
-    if (err.server && !err.restart) $('#ofErr').textContent = err.message;
+    if (err.server && !err.restart) { $('#ofErr').textContent = err.message; $('#ofErr').scrollIntoView({ block: 'nearest' }); }
     else { $('#ofFile').value = ''; renderOfList(); await msgBox('La fiche technique n\'a pas été enregistrée', failHtml(err, 'le fichier PDF de la fiche')); }
   } finally { $('#ofSave').disabled = false; }
 };

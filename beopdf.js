@@ -8,6 +8,10 @@ const MONTHS = { janvier: 1, février: 2, fevrier: 2, mars: 3, avril: 4, mai: 5,
 const TIME_RANGE = /^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/;
 const BLOCK_HDR = /^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})\s*\|\s*(.*?)\s*\|\s*(.+)$/;
 const pad = (t) => (t.length === 4 ? '0' + t : t);
+// Horaire de nuit : « 22:00 - 03:00 » finit le lendemain (heure de fin avant celle du début).
+// endMin : minutes depuis minuit du jour du début (03:00 le lendemain → 27 × 60)
+const timeMin = (t) => { const [h, m] = String(t || '').split(':').map(Number); return h * 60 + m; };
+const endMin = (start, end) => { const s = timeMin(start), e = timeMin(end); return e <= s ? e + 1440 : e; };
 const frDate = (s) => {
   const m = /(\d{1,2})\s+([A-Za-zéèûôîçà]+)\s+(\d{4})/.exec(s || '');
   if (!m || !MONTHS[m[2].toLowerCase()]) return null;
@@ -158,9 +162,11 @@ function parseBeoBook(buf, match) {
       const date = r.date || h.date;
       if (h.date && r.date && r.date !== h.date) warnings.push(`BEO ${b.number} : ligne du ${r.date} différente de la date de l'événement (${h.date}) — date de la ligne utilisée`);
       const key = `${date}|${setKey(ids)}`;
-      const g = groups.get(key) || { date, ids, start: r.start, end: r.end, rows: 0, info: [], av: null };
+      const g = groups.get(key) || { date, ids, start: r.start, end: r.end, endAt: endMin(r.start, r.end), rows: 0, info: [], av: null };
       if (r.start < g.start) g.start = r.start;
-      if (r.end > g.end) g.end = r.end;
+      // fin la plus tardive, horaire de nuit compris (22:00 - 03:00 finit après 08:00 - 12:00)
+      const at = endMin(r.start, r.end);
+      if (at > g.endAt) { g.endAt = at; g.end = r.end; }
       g.rows++; groups.set(key, g);
       const line = { start: r.start, end: r.end, name: r.name, sign: r.sign, setup: r.setup, pax: r.pax };
       if (!g.info.some((x) => JSON.stringify(x) === JSON.stringify(line))) g.info.push(line);
@@ -263,4 +269,4 @@ function beoPages(buf) {
   return out;
 }
 
-module.exports = { parseBeoBook, describeAv, makeMatcher, nz, beoPages };
+module.exports = { parseBeoBook, describeAv, makeMatcher, nz, beoPages, timeMin, endMin };

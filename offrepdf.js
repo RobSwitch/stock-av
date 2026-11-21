@@ -9,16 +9,38 @@ const LABEL_X = 110; // les libellés (Client, Room, Set up…) sont dans la col
 const NAME_X = [75, 300]; // colonne « Equipment »
 const SUPPLIER_X = 430; // dernière colonne (Included / Dolce / CAS / prix)
 
-// « 14/10/2026 », « 15-16/10/2026 », « 15&16/10/2026 », « 30/10/2026 - 02/11/2026 » → { from, to }
+// Année plausible pour une fiche : de 2 ans avant à 5 ans après aujourd'hui (sinon faute de frappe probable)
+const plausibleYear = (y) => { const now = new Date().getFullYear(); return y >= now - 2 && y <= now + 5; };
+// Année telle qu'écrite dans la fiche → { year, odd } ; odd : l'année écrite (« 20026 ») quand elle a dû être corrigée ou n'a pas de sens
+// « 26 » → 2026 ; « 20026 », « 22026 » → 2026 (un chiffre en trop, une seule année plausible possible) ; sinon gardée telle quelle, signalée
+function fixYear(y) {
+  if (y.length === 2) return { year: 2000 + Number(y), odd: null };
+  if (y.length === 4 && plausibleYear(Number(y))) return { year: Number(y), odd: null };
+  if (y.length === 5) {
+    const c = [...new Set([...y].map((_, i) => y.slice(0, i) + y.slice(i + 1)))].map(Number).filter(plausibleYear);
+    if (c.length === 1) return { year: c[0], odd: y };
+  }
+  return { year: y.length === 4 ? Number(y) : null, odd: y };
+}
+// « 14/10/2026 », « 15-16/10/2026 », « 15&16/10/2026 », « 30/10/2026 - 02/11/2026 » → { from, to, odd }
+// odd : année écrite de travers dans la fiche (« 20026 ») → à montrer dans l'aperçu pour vérification
 function parseDates(s) {
   const t = clean(s);
-  const iso = (d, m, y) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-  const full = [...t.matchAll(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g)];
-  if (full.length >= 2) return { from: iso(full[0][1], full[0][2], full[0][3]), to: iso(full.at(-1)[1], full.at(-1)[2], full.at(-1)[3]) };
-  const m = /(\d{1,2})(?:\s*[-&+,]\s*(?:\d{1,2}\s*[-&+,]\s*)*(\d{1,2}))?\/(\d{1,2})\/(\d{4})/.exec(t);
-  if (!m) return { from: null, to: null };
-  return { from: iso(m[1], m[3], m[4]), to: iso(m[2] || m[1], m[3], m[4]) };
+  let odd = null;
+  const iso = (d, m, y) => {
+    const f = fixYear(y);
+    if (f.odd) odd = f.odd;
+    return f.year ? `${f.year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}` : null;
+  };
+  const full = [...t.matchAll(/(\d{1,2})\/(\d{1,2})\/(\d{2,})/g)];
+  if (full.length >= 2) return { from: iso(full[0][1], full[0][2], full[0][3]), to: iso(full.at(-1)[1], full.at(-1)[2], full.at(-1)[3]), odd };
+  const m = /(\d{1,2})(?:\s*[-&+,]\s*(?:\d{1,2}\s*[-&+,]\s*)*(\d{1,2}))?\/(\d{1,2})\/(\d{2,})/.exec(t);
+  if (!m) return { from: null, to: null, odd: null };
+  return { from: iso(m[1], m[3], m[4]), to: iso(m[2] || m[1], m[3], m[4]), odd };
 }
+const dmy = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`;
+// avertissement de l'aperçu : « Show : la fiche indique « 15/11/20026 » → lu 15/11/2026 »
+const dateWarn = (what, raw, d) => `${what} : la fiche indique « ${raw} »${d ? ` → lu ${dmy(d)}` : ' → date illisible'}, à vérifier`;
 
 // Included → inclus ; Dolce → dolce (notre matériel) ; un prix → payant ; sinon société externe (CAS…)
 function supplierKind(s) {
@@ -46,11 +68,19 @@ function parseOffer(buf) {
       if (!out.title && cs.length === 1 && cs[0].bold && cs[0].size >= 12 && /\bSET\b/.test(cs[0].text)) { out.title = clean(cs[0].text); continue; }
       // bloc salle
       if (lbl === 'Room' && rest) {
-        room = { name: rest, page: pi + 1, setup: null, show_from: null, show_to: null, show_raw: '', items: [] };
+        room = { name: rest, page: pi + 1, setup: null, show_from: null, show_to: null, show_raw: '', items: [], warns: [] };
         out.rooms.push(room); section = ''; inServices = false; last = null; continue;
       }
-      if (room && lbl === 'Set up' && rest) { room.setup = parseDates(rest).from; continue; }
-      if (room && lbl === 'Show time' && rest) { const d = parseDates(rest); room.show_from = d.from; room.show_to = d.to; room.show_raw = rest; continue; }
+      if (room && lbl === 'Set up' && rest) {
+        const d = parseDates(rest); room.setup = d.from; room.setup_raw = rest;
+        if (d.odd) room.warns.push(dateWarn('Montage', rest, d.from));
+        continue;
+      }
+      if (room && lbl === 'Show time' && rest) {
+        const d = parseDates(rest); room.show_from = d.from; room.show_to = d.to; room.show_raw = rest;
+        if (d.odd) room.warns.push(dateWarn('Show', rest, d.from));
+        continue;
+      }
       // titre de section (PROJECTION & HARDWARE, SOUND, SERVICES - TRANSPORT…) : texte gras seul, en majuscules
       if (cs.length === 1 && cs[0].bold && cs[0].x > 150 && /[A-Z]/.test(cs[0].text) && cs[0].text === cs[0].text.toUpperCase() && !/\bSET\b/.test(cs[0].text)) {
         section = clean(cs[0].text);
@@ -77,4 +107,4 @@ function parseOffer(buf) {
   return out;
 }
 
-module.exports = { parseOffer, parseDates };
+module.exports = { parseOffer, parseDates, plausibleYear };

@@ -400,7 +400,8 @@ function upsertPlanningEvent(b) {
   const end_date = b.end_date || b.date;
   if (!isDate(end_date) || end_date < b.date) throw new Error('La date de fin doit être le même jour ou après la date de début');
   if (!isTime(b.start) || !isTime(b.end)) throw new Error('Horaire invalide (format HH:MM)');
-  if (b.start && b.end && b.end <= b.start) throw new Error("L'heure de fin doit être après l'heure de début");
+  // fin avant le début = horaire de nuit (22:00 – 03:00 finit le lendemain) : la case reste au jour du début
+  if (b.start && b.end && b.end === b.start) throw new Error("L'heure de fin doit être différente de l'heure de début");
   const color = ['red', 'green', 'yellow'].includes(b.color) ? b.color : null;
   const ids = [...new Set((b.room_ids || []).map(Number))];
   if (!ids.length) throw new Error('Choisis au moins une salle');
@@ -742,7 +743,7 @@ function offerPhases(r) {
   add(r.demontage, 'Démontage');
   return out;
 }
-const nextDay = (d) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + 1); return x.toISOString().slice(0, 10); };
+const nextDay = (d, n = 1) => { const x = new Date(d + 'T12:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 
 // Ajoute l'étiquette à l'événement de la même société dans la salle ce jour-là, sinon crée l'événement. Renvoie les liens.
 function applyOffer(client, rooms) {
@@ -759,9 +760,13 @@ function applyOffer(client, rooms) {
       }
       const rest = r.room_ids.filter((id) => !evs.some((e) => e.room_ids.includes(id)));
       if (rest.length) {
+        // horaire de la case créée : celui du show indiqué dans l'aperçu ; montage / démontage : l'heure indiquée,
+        // sinon quand la salle se libère (pas d'heure de fin : c'est notre travail, il ne bloque pas la salle)
+        const show = tags.includes('Show');
+        const start = show ? r.show_start || '' : (tags.includes('Montage') ? r.setup_time : r.demontage_time) || freeFrom(day, rest);
         const id = Number(db.prepare(`INSERT INTO planning_events (area, date, end_date, rooms, room_ids, client, detail, start, end, tags, color, urgent, raw)
-          VALUES ('', ?, ?, ?, ?, ?, '', ?, '', ?, 'red', 0, '')`).run(day, day, JSON.stringify(rest.map((i) => names.get(i))), JSON.stringify(rest), client,
-            tags.includes('Show') ? '' : freeFrom(day, rest), JSON.stringify(tags)).lastInsertRowid);
+          VALUES ('', ?, ?, ?, ?, ?, '', ?, ?, ?, 'red', 0, '')`).run(day, day, JSON.stringify(rest.map((i) => names.get(i))), JSON.stringify(rest), client,
+            start, show && r.show_start ? r.show_end || '' : '', JSON.stringify(tags)).lastInsertRowid);
         for (const t of tags) links.push({ id, tag: t, created: true });
       }
     }
@@ -769,11 +774,20 @@ function applyOffer(client, rooms) {
   return links;
 }
 // Un montage (ou démontage) créé par une offre commence quand la salle se libère : fin du dernier événement
-// d'une autre société dans ces salles ce jour-là (ex. Nagelmackers jusqu'à 17:00 → montage à 17:00)
+// d'une autre société dans ces salles ce jour-là (ex. Nagelmackers jusqu'à 17:00 → montage à 17:00).
+// Horaire de nuit : celui de la veille (22:00 – 03:00) libère la salle à 03:00 ; celui du jour finit après minuit → pas d'heure.
 function freeFrom(day, roomIds, exceptId) {
-  return planningData().events
-    .filter((e) => e.id !== exceptId && e.date <= day && day <= e.end_date && e.end && e.room_ids.some((id) => roomIds.includes(id)))
-    .reduce((m, e) => (e.end > m ? e.end : m), '');
+  const prev = nextDay(day, -1);
+  let best = -1;
+  for (const e of planningData().events) {
+    if (e.id === exceptId || !e.end || !e.room_ids.some((id) => roomIds.includes(id))) continue;
+    let at = null;
+    if (e.date <= day && day <= e.end_date) at = e.start ? beopdf.endMin(e.start, e.end) : beopdf.timeMin(e.end);
+    else if (e.start && e.end < e.start && e.date <= prev && prev <= e.end_date) at = beopdf.timeMin(e.end);
+    if (at !== null && at > best) best = at;
+  }
+  if (best < 0 || best >= 1440) return '';
+  return `${String(Math.floor(best / 60)).padStart(2, '0')}:${String(best % 60).padStart(2, '0')}`;
 }
 // Retire ce qu'une offre avait ajouté (un événement créé par l'offre est supprimé quand il n'a plus d'étiquette)
 function undoOffer(offerId) {
@@ -801,6 +815,28 @@ function relinkOffers(fromId, toId) {
   }
 }
 
+// Dates et heures d'une salle de la fiche (toutes modifiables dans l'aperçu, puis depuis la case).
+// Heures facultatives : utilisées quand la fiche crée la case (pas de BEO) ; fin avant le début = horaire de nuit.
+const OFFER_TIMES = ['setup_time', 'show_start', 'show_end', 'demontage_time'];
+const offerDates = (r) => ({
+  setup: r.setup || null, show_from: r.show_from || null, show_to: r.show_to || r.show_from || null, demontage: r.demontage || null,
+  ...Object.fromEntries(OFFER_TIMES.map((k) => [k, String(r[k] || '').trim()])),
+});
+function checkOfferDates(r) {
+  const where = r.name ? ` pour « ${r.name} »` : '';
+  if (!isDate(r.setup)) throw new Error(`Date de montage manquante ou invalide${where}`);
+  if (r.show_from && (!isDate(r.show_from) || !isDate(r.show_to) || r.show_to < r.show_from)) throw new Error(`Dates de show invalides${where}`);
+  if (r.demontage && !isDate(r.demontage)) throw new Error(`Date de démontage invalide${where}`);
+  // faute de frappe dans la fiche (« 20026 », « 2062 ») : la case serait perdue dans une autre année
+  for (const [k, what] of [['setup', 'du montage'], ['show_from', 'du show'], ['show_to', 'de fin du show'], ['demontage', 'du démontage']]) {
+    if (r[k] && !offrepdf.plausibleYear(Number(r[k].slice(0, 4)))) throw new Error(`Année ${r[k].slice(0, 4)} pour la date ${what}${where} : vérifie la date`);
+  }
+  if (r.show_from && r.setup > r.show_from) throw new Error(`Le montage doit être avant le show${where}`);
+  if (r.demontage && r.demontage < (r.show_to || r.setup)) throw new Error(`Le démontage doit être après le show${where}`);
+  if (!OFFER_TIMES.every((k) => isTime(r[k]))) throw new Error(`Heure invalide${where} (format HH:MM)`);
+  if (r.show_start && r.show_start === r.show_end) throw new Error(`L'heure de fin du show doit être différente de l'heure de début${where}`);
+}
+
 function saveOffer(b, j) {
   // une fiche lue ne s'enregistre qu'une fois (son PDF en attente est rangé à l'enregistrement)
   const src = /^[0-9a-f-]{36}$/.test(b.token || '') && tmpFile(b.token);
@@ -808,20 +844,13 @@ function saveOffer(b, j) {
   const client = String(b.client || '').trim();
   if (!client) throw new Error('Indique le nom de la société / du client');
   const rooms = (b.rooms || []).map((r) => ({
-    name: String(r.name || '').trim(), page: Number(r.page) || 1, setup: r.setup || null,
-    show_from: r.show_from || null, show_to: r.show_to || r.show_from || null, show_raw: r.show_raw || '',
-    demontage: r.demontage || null,
+    name: String(r.name || '').trim(), page: Number(r.page) || 1, show_raw: r.show_raw || '', ...offerDates(r),
     room_ids: [...new Set((r.room_ids || []).map(Number))].filter((id) => db.prepare("SELECT 1 FROM locations WHERE id=? AND kind='salle'").get(id)),
     items: (Array.isArray(r.items) ? r.items : []).map(cleanItem), skip: !!r.skip, // skip : salle hors application (ex. « Networking area »), pas affichée dans la grille
   }));
   if (!rooms.length) throw new Error('Aucune salle dans cette offre');
   for (const r of rooms) {
-    const where = r.name ? ` pour « ${r.name} »` : '';
-    if (!isDate(r.setup)) throw new Error(`Date de montage manquante ou invalide${where}`);
-    if (r.show_from && (!isDate(r.show_from) || !isDate(r.show_to) || r.show_to < r.show_from)) throw new Error(`Dates de show invalides${where}`);
-    if (r.demontage && !isDate(r.demontage)) throw new Error(`Date de démontage invalide${where}`);
-    if (r.show_from && r.setup > r.show_from) throw new Error(`Le montage doit être avant le show${where}`);
-    if (r.demontage && r.demontage < (r.show_to || r.setup)) throw new Error(`Le démontage doit être après le show${where}`);
+    checkOfferDates(r);
     if (!r.room_ids.length && !r.skip) throw new Error(`Choisis la salle de l'application pour « ${r.name || 'cette offre'} »`);
   }
   let id;
@@ -850,7 +879,8 @@ function saveOffer(b, j) {
 // Modifier une offre enregistrée depuis une case du planning : nom affiché, société, salles d'une partie de la fiche
 // (retirée de la case → « hors grille » si plus aucune salle ; ajoutée à une case → salles de la case).
 // Les étiquettes Montage / Show / Démontage sont recalculées. b = { id, client?, label?, rooms?: [{ index, room_ids }],
-// managed?: [{ index, items: [n° des lignes de matériel externe installées par nous] }] }
+// managed?: [{ index, items: [n° des lignes de matériel externe installées par nous] }],
+// dates?: [{ index, setup, show_from, show_to, demontage, setup_time, show_start, show_end, demontage_time }] }
 function updateOffer(b) {
   const o = db.prepare('SELECT * FROM offers WHERE id=?').get(Number(b.id));
   if (!o) throw new Error('Offre introuvable (supprimée ?)');
@@ -872,10 +902,20 @@ function updateOffer(b) {
     const on = new Set((ch.items || []).map(Number));
     (r.items || []).forEach((it, i) => { if (it.kind !== 'externe') return; if (on.has(i)) it.managed = true; else delete it.managed; });
   }
-  const relink = changes.length > 0 || client !== o.client;
+  // dates / heures corrigées après l'enregistrement (erreur dans la fiche, montage avancé, démontage reporté…)
+  let redated = false;
+  for (const ch of Array.isArray(b.dates) ? b.dates : []) {
+    const r = rooms[Number(ch.index)];
+    if (!r) throw new Error('Salle de la fiche introuvable');
+    const before = JSON.stringify(offerDates(r));
+    Object.assign(r, offerDates({ ...offerDates(r), ...ch }));
+    checkOfferDates(r);
+    if (JSON.stringify(offerDates(r)) !== before) redated = true;
+  }
+  const relink = changes.length > 0 || redated || client !== o.client;
   // matériel déjà monté / démonté avec cette fiche : ses cases ne bougent plus (sinon l'historique ne suit plus)
   if (relink && db.prepare('SELECT 1 FROM offer_moves WHERE offer_id=?').get(o.id)) {
-    throw new Error('Du matériel a déjà été validé (« Prêt ») avec cette fiche : annule d\'abord la validation dans la case pour changer sa salle ou sa société');
+    throw new Error('Du matériel a déjà été validé (« Prêt ») avec cette fiche : annule d\'abord la validation dans la case pour changer ses dates, sa salle ou sa société');
   }
   inTransaction(() => {
     let links = JSON.parse(o.links || '[]');
@@ -1346,11 +1386,17 @@ function checksList() {
   const add = (level, type, key, o) => out.push({ level, type, key: `${type}:${key}`, ...o });
 
   // 1. deux sociétés dans la même salle en même temps
+  // horaire en minutes depuis minuit du jour d : 22:00 – 03:00 → [1320, 1620] ; la nuit de la veille compte aussi (→ [-120, 180])
   const seen = new Set();
   for (let d = today; d <= horizon; d = addDaysIso(d, 1)) {
-    const day = evs.filter((e) => onDay(e, d) && e.start && e.end && !createdByOffer.has(e.id));
-    for (const a of day) for (const b of day) {
-      if (a.id >= b.id || sameClient(a.client, b.client) || !(a.start < b.end && b.start < a.end)) continue;
+    const timed = (e) => e.start && e.end && !createdByOffer.has(e.id);
+    const span = (e, shift) => ({ e, own: !shift, s: beopdf.timeMin(e.start) - shift, t: beopdf.endMin(e.start, e.end) - shift });
+    const prev = addDaysIso(d, -1);
+    const day = [...evs.filter((e) => onDay(e, d) && timed(e)).map((e) => span(e, 0)),
+      ...evs.filter((e) => onDay(e, prev) && timed(e) && e.end < e.start).map((e) => span(e, 1440))];
+    for (const x of day) for (const y of day) {
+      const a = x.e, b = y.e;
+      if (a.id >= b.id || !(x.own || y.own) || sameClient(a.client, b.client) || !(x.s < y.t && y.s < x.t)) continue;
       const rooms = a.room_ids.filter((id) => b.room_ids.includes(id));
       if (!rooms.length) continue;
       const k = `${d}:${a.id}:${b.id}:${a.start}-${a.end}:${b.start}-${b.end}:${rooms}`;
@@ -1572,7 +1618,8 @@ const routes = {
   'POST /api/offers/update': (b) => {
     const o = db.prepare('SELECT client, version, filename FROM offers WHERE id=?').get(Number(b.id));
     if (!o) throw new Error('Offre introuvable (déjà supprimée ?)');
-    if (!(Array.isArray(b.rooms) && b.rooms.length) && !(Array.isArray(b.managed) && b.managed.length) && (b.client === undefined || String(b.client).trim() === o.client)) return updateOffer(b);
+    const listed = (k) => Array.isArray(b[k]) && b[k].length > 0;
+    if (!listed('rooms') && !listed('managed') && !listed('dates') && (b.client === undefined || String(b.client).trim() === o.client)) return updateOffer(b);
     return journaled('offre-modif', o.filename, `Fiche technique modifiée — ${o.client}${o.version ? ' ' + o.version : ''}`, () => updateOffer(b));
   },
   // Matériel ajouté (note) : installé dans la salle dès l'ajout, retiré quand il est démonté

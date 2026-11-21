@@ -265,7 +265,15 @@ function actHtml(a, day, rowIds, rowClients) {
 // heure à laquelle la salle se libère : fin du dernier événement « client » du jour
 // (un montage / démontage créé par une fiche technique, sans heure de fin, est notre travail : il ne bloque pas la salle)
 const isOurJob = (e) => !e.end && e.tags.length && e.tags.every((t) => PHASES.includes(t));
-const endOf = (evs) => evs.filter((e) => !isOurJob(e)).map((e) => e.end || '?').sort().pop() || '';
+// horaire de nuit (22:00–03:00) : finit après minuit → { end: '03:00', night: true } ; sans heure de fin → { end: '?' }
+const night = (e) => !!(e.start && e.end && e.end < e.start);
+const endKey = (e) => { if (!e.end) return Infinity; const [h, m] = e.end.split(':').map(Number); return h * 60 + m + (night(e) ? 1440 : 0); };
+const endOf = (evs) => {
+  const list = evs.filter((e) => !isOurJob(e));
+  if (!list.length) return null;
+  const last = list.reduce((a, b) => (endKey(b) > endKey(a) ? b : a));
+  return { end: last.end || '?', night: night(last) };
+};
 
 // Une ligne par salle : [ salle + « libre dès » ] [ aujourd'hui : à vérifier / actions à faire / matériel à démonter ] [ demain : à préparer ]
 function roomRows(areas, day) {
@@ -304,7 +312,8 @@ function roomRows(areas, day) {
       stats.rooms++;
       const end = endOf(r.today);
       const free = !end ? '<span class="free ok">libre</span>'
-        : end === '?' ? '<span class="free">heure de fin ?</span>' : `<span class="free">libre dès <b>${esc(end)}</b></span>`;
+        : end.end === '?' ? '<span class="free">heure de fin ?</span>'
+        : `<span class="free">libre dès <b>${esc(end.end)}</b>${end.night ? ' cette nuit' : ''}</span>`;
       // aujourd'hui : qui a tourné, et ce qu'il reste à faire ce soir (démontage, montage pas validé) ;
       // démontage d'une fiche où tout est installé par une société externe : c'est elle qui démonte, rien pour nous
       const todayHtml = r.today.map((e) => {
